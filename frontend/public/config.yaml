@@ -1,0 +1,19 @@
+exclude:
+  accounts:
+    # ids:
+    #   - "176408745696"
+    names:
+      - "archera*"
+      - "groundcover*"
+      - "*logs*"
+      - "*management*"
+      - "*marketplace*"
+      - "*security*"
+  regions:
+    - ap-east-1
+    - ap-northeast-1
+    - ap-northeast-3
+    - ap-south-1
+    - eu-south-1
+    - sa-east-1
+    - us-west-1
