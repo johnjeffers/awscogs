@@ -422,17 +422,17 @@ export const CostDashboard: React.FC = () => {
           {/* Tabs and Filter */}
           <div className="bg-white shadow rounded-lg">
             <div className="border-b border-gray-200">
-              <div className="flex items-center justify-between px-4">
-                {/* Tab Buttons */}
-                <nav className="flex -mb-px">
+              <div className="flex items-center px-4">
+                {/* Tab Buttons - scrollable container */}
+                <nav className="flex overflow-x-auto flex-1 min-w-0">
                   {tabs.map((tab) => (
                     <button
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
-                      className={`py-4 px-6 text-sm font-medium border-b-2 ${
+                      className={`py-4 px-6 text-sm font-medium whitespace-nowrap flex-shrink-0 ${
                         activeTab === tab.id
-                          ? 'border-blue-500 text-blue-600'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                          ? 'text-blue-600 bg-blue-50 rounded-t-md'
+                          : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-t-md'
                       }`}
                     >
                       {tab.label}
@@ -447,8 +447,8 @@ export const CostDashboard: React.FC = () => {
                   ))}
                 </nav>
 
-                {/* Filter Input and Export */}
-                <div className="py-3 flex items-center gap-3">
+                {/* Filter Input and Export - fixed on the right */}
+                <div className="py-3 flex items-center gap-3 flex-shrink-0 ml-4">
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

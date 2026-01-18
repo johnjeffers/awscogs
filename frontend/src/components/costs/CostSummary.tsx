@@ -89,9 +89,6 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
             <dd className="mt-1 text-2xl font-semibold text-gray-900">
               {ec2Count + ebsCount + ecsCount + rdsCount + eksCount + elbCount + natCount + eipCount + secretCount + publicIpv4Count}
             </dd>
-            <dd className="text-xs text-gray-500">
-              {ec2Count} EC2 / {ebsCount} EBS / {ecsCount} ECS / {rdsCount} RDS / {eksCount} EKS / {elbCount} ELB / {natCount} NAT / {eipCount} EIP / {secretCount} Secrets / {publicIpv4Count} Public IPv4
-            </dd>
           </div>
         </div>
       </div>
