@@ -34,11 +34,12 @@ func main() {
 
 	// Create pricing provider
 	ctx := context.Background()
-	pricingProvider, err := pricing.NewAWSProvider(ctx, cfg.Pricing.RefreshIntervalMinutes)
+	pricingProvider, err := pricing.NewAWSProvider(ctx, cfg.Pricing.RefreshIntervalMinutes, cfg.Pricing.RateLimitPerSecond)
 	if err != nil {
 		logger.Error("failed to initialize AWS pricing provider", "error", err)
 		os.Exit(1)
 	}
+	logger.Info("pricing provider initialized", "rateLimitPerSecond", cfg.Pricing.RateLimitPerSecond)
 
 	// Create discovery service
 	discovery := aws.NewDiscovery(pricingProvider, logger)

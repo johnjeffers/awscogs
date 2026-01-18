@@ -40,6 +40,7 @@ type AccountConfig struct {
 // PricingConfig holds AWS pricing settings
 type PricingConfig struct {
 	RefreshIntervalMinutes int `yaml:"refreshIntervalMinutes"`
+	RateLimitPerSecond     int `yaml:"rateLimitPerSecond"` // Max pricing API calls per second (0 = unlimited)
 }
 
 // LogConfig holds logging settings
@@ -60,6 +61,7 @@ func DefaultConfig() *Config {
 		},
 		Pricing: PricingConfig{
 			RefreshIntervalMinutes: 60,
+			RateLimitPerSecond:     5, // Conservative default to avoid AWS throttling
 		},
 		Log: LogConfig{
 			Level: "info",
@@ -125,6 +127,12 @@ func (c *Config) loadFromEnv() {
 	if interval := os.Getenv("AWSCOGS_PRICING_REFRESH_MINUTES"); interval != "" {
 		if i, err := strconv.Atoi(interval); err == nil {
 			c.Pricing.RefreshIntervalMinutes = i
+		}
+	}
+
+	if rateLimit := os.Getenv("AWSCOGS_PRICING_RATE_LIMIT"); rateLimit != "" {
+		if r, err := strconv.Atoi(rateLimit); err == nil {
+			c.Pricing.RateLimitPerSecond = r
 		}
 	}
 }

@@ -32,10 +32,13 @@ type AWSProvider struct {
 	cacheMu         sync.RWMutex
 	cacheExpiry     time.Time
 	cacheDuration   time.Duration
+	rateLimitMu     sync.Mutex    // Protects rate limiting
+	lastAPICall     time.Time     // Time of last API call
+	minCallInterval time.Duration // Minimum time between API calls
 }
 
 // NewAWSProvider creates a new AWS pricing provider
-func NewAWSProvider(ctx context.Context, cacheDurationMinutes int) (*AWSProvider, error) {
+func NewAWSProvider(ctx context.Context, cacheDurationMinutes, rateLimitPerSecond int) (*AWSProvider, error) {
 	// AWS Pricing API is only available in us-east-1 and ap-south-1
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
@@ -47,6 +50,13 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes int) (*AWSProvider
 	// Validate credentials by making a test API call
 	if err := validateCredentials(ctx, client); err != nil {
 		return nil, err
+	}
+
+	// Calculate minimum interval between API calls
+	// If rateLimitPerSecond is 0 or negative, no rate limiting
+	var minInterval time.Duration
+	if rateLimitPerSecond > 0 {
+		minInterval = time.Second / time.Duration(rateLimitPerSecond)
 	}
 
 	return &AWSProvider{
@@ -62,7 +72,33 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes int) (*AWSProvider
 		secretCache:     make(map[string]cogtypes.CostValue),
 		publicIPv4Cache: make(map[string]cogtypes.CostValue),
 		cacheDuration:   time.Duration(cacheDurationMinutes) * time.Minute,
+		minCallInterval: minInterval,
 	}, nil
+}
+
+// waitForRateLimit waits until enough time has passed since the last API call
+// This enforces a maximum of N calls per second by spacing out requests
+func (p *AWSProvider) waitForRateLimit(ctx context.Context) error {
+	if p.minCallInterval == 0 {
+		return nil // No rate limiting configured
+	}
+
+	p.rateLimitMu.Lock()
+	defer p.rateLimitMu.Unlock()
+
+	// Calculate how long to wait
+	elapsed := time.Since(p.lastAPICall)
+	if elapsed < p.minCallInterval {
+		waitTime := p.minCallInterval - elapsed
+		select {
+		case <-time.After(waitTime):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	p.lastAPICall = time.Now()
+	return nil
 }
 
 // validateCredentials checks that AWS credentials are configured and have access to the Pricing API
@@ -275,7 +311,7 @@ func getECSFargatePrice(region string) cogtypes.CostValue {
 }
 
 // GetEKSPrice returns the hourly price for an EKS cluster control plane
-// EKS control plane pricing is $0.10/hour across all regions
+// EKS control plane pricing is $0.10/hour across all regions (published AWS rate)
 func (p *AWSProvider) GetEKSPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
 	cacheKey := region
 
@@ -287,8 +323,8 @@ func (p *AWSProvider) GetEKSPrice(ctx context.Context, region string) (cogtypes.
 	}
 	p.cacheMu.RUnlock()
 
-	// EKS control plane is $0.10/hour (fixed price across regions)
-	price := getEKSFallbackPrice()
+	// EKS control plane is $0.10/hour (published AWS standard rate)
+	price := cogtypes.CostValue(0.10)
 
 	// Update cache
 	p.cacheMu.Lock()
@@ -301,13 +337,7 @@ func (p *AWSProvider) GetEKSPrice(ctx context.Context, region string) (cogtypes.
 	return price, nil
 }
 
-// getEKSFallbackPrice returns the standard EKS control plane price
-func getEKSFallbackPrice() cogtypes.CostValue {
-	// EKS control plane is $0.10/hour (standard across all regions)
-	return 0.10
-}
-
-// GetELBPrice returns the hourly price for a load balancer by type
+// GetELBPrice returns the hourly price for a load balancer by type (published AWS rates)
 func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (cogtypes.CostValue, error) {
 	cacheKey := fmt.Sprintf("%s:%s", region, lbType)
 
@@ -319,8 +349,18 @@ func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (c
 	}
 	p.cacheMu.RUnlock()
 
-	// Get fallback price based on load balancer type
-	price := getELBFallbackPrice(lbType)
+	// Published AWS load balancer hourly rates
+	var price cogtypes.CostValue
+	switch lbType {
+	case "application":
+		price = 0.0225 // ALB: $0.0225/hour base
+	case "network":
+		price = 0.0225 // NLB: $0.0225/hour base
+	case "classic":
+		price = 0.025 // CLB: $0.025/hour base
+	default:
+		price = 0.0225 // Default to ALB pricing
+	}
 
 	// Update cache
 	p.cacheMu.Lock()
@@ -333,26 +373,8 @@ func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (c
 	return price, nil
 }
 
-// getELBFallbackPrice returns the base hourly price for load balancers by type
-func getELBFallbackPrice(lbType string) cogtypes.CostValue {
-	switch lbType {
-	case "application":
-		// ALB: $0.0225/hour base
-		return 0.0225
-	case "network":
-		// NLB: $0.0225/hour base
-		return 0.0225
-	case "classic":
-		// CLB: $0.025/hour base
-		return 0.025
-	default:
-		// Default to ALB pricing
-		return 0.0225
-	}
-}
-
 // GetNATGatewayPrice returns the hourly price for a NAT Gateway
-// NAT Gateway pricing is $0.045/hour across most regions
+// NAT Gateway pricing is $0.045/hour across most regions (published AWS rate)
 func (p *AWSProvider) GetNATGatewayPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
 	cacheKey := region
 
@@ -364,8 +386,8 @@ func (p *AWSProvider) GetNATGatewayPrice(ctx context.Context, region string) (co
 	}
 	p.cacheMu.RUnlock()
 
-	// NAT Gateway is $0.045/hour (standard across most regions)
-	price := getNATGatewayFallbackPrice()
+	// NAT Gateway is $0.045/hour (published AWS standard rate)
+	price := cogtypes.CostValue(0.045)
 
 	// Update cache
 	p.cacheMu.Lock()
@@ -378,13 +400,7 @@ func (p *AWSProvider) GetNATGatewayPrice(ctx context.Context, region string) (co
 	return price, nil
 }
 
-// getNATGatewayFallbackPrice returns the standard NAT Gateway hourly price
-func getNATGatewayFallbackPrice() cogtypes.CostValue {
-	// NAT Gateway is $0.045/hour (standard across most regions)
-	return 0.045
-}
-
-// GetElasticIPPrice returns the hourly price for an Elastic IP
+// GetElasticIPPrice returns the hourly price for an Elastic IP (published AWS rates)
 // EIPs cost $0.005/hour when NOT associated with a running instance
 // Associated EIPs attached to running instances are free
 func (p *AWSProvider) GetElasticIPPrice(ctx context.Context, region string, isAssociated bool) (cogtypes.CostValue, error) {
@@ -402,8 +418,13 @@ func (p *AWSProvider) GetElasticIPPrice(ctx context.Context, region string, isAs
 	}
 	p.cacheMu.RUnlock()
 
-	// EIP pricing: free when associated, $0.005/hour when not
-	price := getElasticIPFallbackPrice(isAssociated)
+	// Published AWS EIP pricing: free when associated, $0.005/hour when not
+	var price cogtypes.CostValue
+	if isAssociated {
+		price = 0
+	} else {
+		price = 0.005
+	}
 
 	// Update cache
 	p.cacheMu.Lock()
@@ -416,17 +437,7 @@ func (p *AWSProvider) GetElasticIPPrice(ctx context.Context, region string, isAs
 	return price, nil
 }
 
-// getElasticIPFallbackPrice returns the EIP hourly price based on association status
-func getElasticIPFallbackPrice(isAssociated bool) cogtypes.CostValue {
-	if isAssociated {
-		// EIPs attached to running instances are free
-		return 0
-	}
-	// Unassociated EIPs cost $0.005/hour
-	return 0.005
-}
-
-// GetSecretPrice returns the hourly price for a Secrets Manager secret
+// GetSecretPrice returns the hourly price for a Secrets Manager secret (published AWS rate)
 // Secrets Manager charges $0.40/secret/month
 func (p *AWSProvider) GetSecretPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
 	cacheKey := region
@@ -439,8 +450,8 @@ func (p *AWSProvider) GetSecretPrice(ctx context.Context, region string) (cogtyp
 	}
 	p.cacheMu.RUnlock()
 
-	// Secrets Manager: $0.40/secret/month = $0.40/730 hours
-	price := getSecretFallbackPrice()
+	// Published AWS Secrets Manager pricing: $0.40/secret/month = $0.40/730 hours
+	price := cogtypes.CostValue(0.40 / 730.0)
 
 	// Update cache
 	p.cacheMu.Lock()
@@ -453,13 +464,7 @@ func (p *AWSProvider) GetSecretPrice(ctx context.Context, region string) (cogtyp
 	return price, nil
 }
 
-// getSecretFallbackPrice returns the hourly price for a secret
-func getSecretFallbackPrice() cogtypes.CostValue {
-	// $0.40/secret/month = $0.40/730 hours ≈ $0.000548/hour
-	return cogtypes.CostValue(0.40 / 730.0)
-}
-
-// GetPublicIPv4Price returns the hourly price for a public IPv4 address
+// GetPublicIPv4Price returns the hourly price for a public IPv4 address (published AWS rate)
 // As of Feb 2024, AWS charges $0.005/hour for all public IPv4 addresses
 func (p *AWSProvider) GetPublicIPv4Price(ctx context.Context, region string) (cogtypes.CostValue, error) {
 	cacheKey := region
@@ -472,8 +477,8 @@ func (p *AWSProvider) GetPublicIPv4Price(ctx context.Context, region string) (co
 	}
 	p.cacheMu.RUnlock()
 
-	// Public IPv4 address pricing: $0.005/hour (standard across all regions)
-	price := getPublicIPv4FallbackPrice()
+	// Published AWS Public IPv4 pricing: $0.005/hour (standard across all regions, Feb 2024)
+	price := cogtypes.CostValue(0.005)
 
 	// Update cache
 	p.cacheMu.Lock()
@@ -484,12 +489,6 @@ func (p *AWSProvider) GetPublicIPv4Price(ctx context.Context, region string) (co
 	p.cacheMu.Unlock()
 
 	return price, nil
-}
-
-// getPublicIPv4FallbackPrice returns the hourly price for a public IPv4 address
-func getPublicIPv4FallbackPrice() cogtypes.CostValue {
-	// As of Feb 2024, AWS charges $0.005/hour for all public IPv4 addresses
-	return 0.005
 }
 
 // RefreshCache forces a refresh of the pricing cache
@@ -515,6 +514,11 @@ func (p *AWSProvider) fetchEC2Price(ctx context.Context, region, instanceType st
 	locationName, ok := regionToLocation[region]
 	if !ok {
 		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	// Acquire rate limit slot
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
 	}
 
 	input := &pricing.GetProductsInput{
@@ -573,6 +577,11 @@ func (p *AWSProvider) fetchEBSPrices(ctx context.Context, region, volumeType str
 		return 0, 0, 0, fmt.Errorf("unknown region: %s", region)
 	}
 
+	// Acquire rate limit slot
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, 0, 0, fmt.Errorf("rate limit: %w", err)
+	}
+
 	// Fetch base storage price
 	input := &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
@@ -601,24 +610,21 @@ func (p *AWSProvider) fetchEBSPrices(ctx context.Context, region, volumeType str
 		return 0, 0, 0, fmt.Errorf("calling GetProducts for EBS: %w", err)
 	}
 
-	// Use fallback prices if API doesn't return results
 	if len(output.PriceList) == 0 {
-		b, i, t := getEBSFallbackPrices(volumeType)
-		return b, i, t, nil
+		return 0, 0, 0, fmt.Errorf("no pricing found for EBS %s in %s", volumeType, region)
 	}
 
 	base, err = parsePriceFromProduct(output.PriceList[0])
 	if err != nil {
-		b, i, t := getEBSFallbackPrices(volumeType)
-		return b, i, t, nil
+		return 0, 0, 0, fmt.Errorf("parsing EBS price: %w", err)
 	}
 
-	// For gp3/io1/io2, also get IOPS pricing
+	// For gp3/io1/io2, also get IOPS pricing (published standard rates)
 	if volumeType == "gp3" || volumeType == "io1" || volumeType == "io2" {
 		iops = getEBSIOPSPrice(volumeType)
 	}
 
-	// For gp3, also get throughput pricing
+	// For gp3, also get throughput pricing (published standard rate)
 	if volumeType == "gp3" {
 		throughput = cogtypes.CostValue(0.040) // $0.040 per MiB/s-month above 125
 	}
@@ -626,29 +632,7 @@ func (p *AWSProvider) fetchEBSPrices(ctx context.Context, region, volumeType str
 	return base, iops, throughput, nil
 }
 
-// getEBSFallbackPrices returns fallback prices for EBS volumes (us-east-1 prices)
-func getEBSFallbackPrices(volumeType string) (base, iops, throughput cogtypes.CostValue) {
-	switch volumeType {
-	case "gp2":
-		return 0.10, 0, 0 // $0.10 per GB-month
-	case "gp3":
-		return 0.08, 0.005, 0.040 // $0.08/GB, $0.005/IOPS, $0.04/MiB/s
-	case "io1":
-		return 0.125, 0.065, 0 // $0.125/GB, $0.065/IOPS
-	case "io2":
-		return 0.125, 0.065, 0 // Same as io1 for basic tier
-	case "st1":
-		return 0.045, 0, 0 // $0.045 per GB-month
-	case "sc1":
-		return 0.015, 0, 0 // $0.015 per GB-month
-	case "standard":
-		return 0.05, 0, 0 // $0.05 per GB-month
-	default:
-		return 0.10, 0, 0 // Default to gp2 pricing
-	}
-}
-
-// getEBSIOPSPrice returns the per-IOPS-month price
+// getEBSIOPSPrice returns the per-IOPS-month price (published standard rates)
 func getEBSIOPSPrice(volumeType string) cogtypes.CostValue {
 	switch volumeType {
 	case "gp3":
@@ -667,6 +651,11 @@ func (p *AWSProvider) fetchRDSPrice(ctx context.Context, region, instanceClass, 
 	locationName, ok := regionToLocation[region]
 	if !ok {
 		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	// Acquire rate limit slot
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
 	}
 
 	// Map engine names to pricing API database engine names
@@ -710,8 +699,7 @@ func (p *AWSProvider) fetchRDSPrice(ctx context.Context, region, instanceClass, 
 	}
 
 	if len(output.PriceList) == 0 {
-		// Return fallback price if not found
-		return getRDSFallbackPrice(instanceClass, multiAZ), nil
+		return 0, fmt.Errorf("no pricing found for RDS %s %s in %s", instanceClass, engine, region)
 	}
 
 	return parsePriceFromProduct(output.PriceList[0])
@@ -738,32 +726,6 @@ func mapRDSEngine(engine string) string {
 		return mapped
 	}
 	return engine
-}
-
-// getRDSFallbackPrice returns a fallback price for RDS instances
-func getRDSFallbackPrice(instanceClass string, multiAZ bool) cogtypes.CostValue {
-	// Very rough estimates based on db.t3.medium in us-east-1
-	basePrice := cogtypes.CostValue(0.068)
-
-	// Scale based on instance size (very rough)
-	switch {
-	case len(instanceClass) > 7 && instanceClass[7:] == "micro":
-		basePrice = 0.017
-	case len(instanceClass) > 7 && instanceClass[7:] == "small":
-		basePrice = 0.034
-	case len(instanceClass) > 7 && instanceClass[7:] == "medium":
-		basePrice = 0.068
-	case len(instanceClass) > 7 && instanceClass[7:] == "large":
-		basePrice = 0.136
-	case len(instanceClass) > 7 && instanceClass[7:] == "xlarge":
-		basePrice = 0.272
-	}
-
-	if multiAZ {
-		basePrice *= 2
-	}
-
-	return basePrice
 }
 
 // parsePriceFromProduct extracts the hourly on-demand price from the AWS pricing JSON
