@@ -335,6 +335,100 @@ func (h *CostsHandler) GetECSCosts(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// GetEKSCosts returns EKS cluster costs
+func (h *CostsHandler) GetEKSCosts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate EKS-only total cost
+	var eksTotal types.CostValue
+	for _, cluster := range response.EKSClusters {
+		eksTotal += cluster.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		TotalCost:   eksTotal,
+		Currency:    "USD",
+		EKSClusters: response.EKSClusters,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"eks"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// GetELBCosts returns Elastic Load Balancer costs
+func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate ELB-only total cost
+	var elbTotal types.CostValue
+	for _, lb := range response.LoadBalancers {
+		elbTotal += lb.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp:     time.Now().UTC().Format(time.RFC3339),
+		TotalCost:     elbTotal,
+		Currency:      "USD",
+		LoadBalancers: response.LoadBalancers,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"elb"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 // getRegions returns regions to query - either from filter, discovery, or config
 func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]string, error) {
 	// If filter specified, use that

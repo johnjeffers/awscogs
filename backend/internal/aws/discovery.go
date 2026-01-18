@@ -12,6 +12,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
+	"github.com/aws/aws-sdk-go-v2/service/eks"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
+	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
@@ -49,6 +52,8 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		allEBS    []types.EBSVolume
 		allECS    []types.ECSService
 		allRDS    []types.RDSInstance
+		allEKS    []types.EKSCluster
+		allELB    []types.LoadBalancer
 		mu        sync.Mutex
 		wg        sync.WaitGroup
 		totalCost types.CostValue
@@ -129,11 +134,31 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 						"error", err)
 				}
 
+				// Discover EKS clusters
+				eksClusters, err := d.discoverEKS(ctx, cfg, accountID, accountName, reg)
+				if err != nil {
+					d.logger.Error("failed to discover EKS clusters",
+						"account", acc.Name,
+						"region", reg,
+						"error", err)
+				}
+
+				// Discover Load Balancers
+				loadBalancers, err := d.discoverELB(ctx, cfg, accountID, accountName, reg)
+				if err != nil {
+					d.logger.Error("failed to discover load balancers",
+						"account", acc.Name,
+						"region", reg,
+						"error", err)
+				}
+
 				mu.Lock()
 				allEC2 = append(allEC2, ec2Instances...)
 				allEBS = append(allEBS, ebsVolumes...)
 				allECS = append(allECS, ecsServices...)
 				allRDS = append(allRDS, rdsInstances...)
+				allEKS = append(allEKS, eksClusters...)
+				allELB = append(allELB, loadBalancers...)
 				mu.Unlock()
 			}(account, region)
 		}
@@ -154,20 +179,28 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 	for _, inst := range allRDS {
 		totalCost += inst.HourlyCost
 	}
+	for _, cluster := range allEKS {
+		totalCost += cluster.HourlyCost
+	}
+	for _, lb := range allELB {
+		totalCost += lb.HourlyCost
+	}
 
 	// Build account and region summaries
-	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS)
-	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS)
+	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB)
+	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB)
 
 	return &types.CostResponse{
-		TotalCost:    totalCost,
-		Currency:     "USD",
-		Accounts:     accountSummaries,
-		Regions:      regionSummaries,
-		EC2Instances: allEC2,
-		EBSVolumes:   allEBS,
-		ECSServices:  allECS,
-		RDSInstances: allRDS,
+		TotalCost:     totalCost,
+		Currency:      "USD",
+		Accounts:      accountSummaries,
+		Regions:       regionSummaries,
+		EC2Instances:  allEC2,
+		EBSVolumes:    allEBS,
+		ECSServices:   allECS,
+		RDSInstances:  allRDS,
+		EKSClusters:   allEKS,
+		LoadBalancers: allELB,
 	}, nil
 }
 
@@ -603,6 +636,204 @@ func (d *Discovery) discoverECS(ctx context.Context, cfg aws.Config, accountID, 
 	return services, nil
 }
 
+// discoverEKS discovers EKS clusters in the specified region
+func (d *Discovery) discoverEKS(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.EKSCluster, error) {
+	client := eks.NewFromConfig(cfg)
+
+	var clusters []types.EKSCluster
+
+	// List all clusters
+	listInput := &eks.ListClustersInput{}
+	paginator := eks.NewListClustersPaginator(client, listInput)
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing clusters: %w", err)
+		}
+
+		for _, clusterName := range page.Clusters {
+			// Describe each cluster to get details
+			describeOutput, err := client.DescribeCluster(ctx, &eks.DescribeClusterInput{
+				Name: aws.String(clusterName),
+			})
+			if err != nil {
+				d.logger.Warn("failed to describe EKS cluster",
+					"cluster", clusterName,
+					"error", err)
+				continue
+			}
+
+			cluster := describeOutput.Cluster
+			if cluster == nil {
+				continue
+			}
+
+			status := ""
+			if cluster.Status != "" {
+				status = string(cluster.Status)
+			}
+
+			version := ""
+			if cluster.Version != nil {
+				version = *cluster.Version
+			}
+
+			platform := "linux"
+			if cluster.PlatformVersion != nil && *cluster.PlatformVersion != "" {
+				platform = *cluster.PlatformVersion
+			}
+
+			// Get pricing for active clusters
+			var hourlyCost types.CostValue
+			if status == "ACTIVE" {
+				price, err := d.pricingProvider.GetEKSPrice(ctx, region)
+				if err != nil {
+					d.logger.Warn("failed to get EKS price",
+						"cluster", clusterName,
+						"region", region,
+						"error", err)
+				} else {
+					hourlyCost = price
+				}
+			}
+
+			clusters = append(clusters, types.EKSCluster{
+				AccountID:   accountID,
+				AccountName: accountName,
+				Region:      region,
+				ClusterName: clusterName,
+				Status:      status,
+				Version:     version,
+				Platform:    platform,
+				HourlyCost:  hourlyCost,
+			})
+		}
+	}
+
+	return clusters, nil
+}
+
+// discoverELB discovers Elastic Load Balancers (ALB, NLB, and CLB) in the specified region
+func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.LoadBalancer, error) {
+	var loadBalancers []types.LoadBalancer
+
+	// Discover ALB and NLB using v2 API
+	v2Client := elasticloadbalancingv2.NewFromConfig(cfg)
+	v2Paginator := elasticloadbalancingv2.NewDescribeLoadBalancersPaginator(v2Client, &elasticloadbalancingv2.DescribeLoadBalancersInput{})
+
+	for v2Paginator.HasMorePages() {
+		page, err := v2Paginator.NextPage(ctx)
+		if err != nil {
+			d.logger.Warn("failed to describe v2 load balancers",
+				"region", region,
+				"error", err)
+			break
+		}
+
+		for _, lb := range page.LoadBalancers {
+			name := ""
+			if lb.LoadBalancerName != nil {
+				name = *lb.LoadBalancerName
+			}
+
+			arn := ""
+			if lb.LoadBalancerArn != nil {
+				arn = *lb.LoadBalancerArn
+			}
+
+			lbType := "application"
+			if lb.Type != "" {
+				lbType = string(lb.Type)
+			}
+
+			scheme := ""
+			if lb.Scheme != "" {
+				scheme = string(lb.Scheme)
+			}
+
+			state := ""
+			if lb.State != nil && lb.State.Code != "" {
+				state = string(lb.State.Code)
+			}
+
+			// Get pricing for active load balancers
+			var hourlyCost types.CostValue
+			if state == "active" {
+				price, err := d.pricingProvider.GetELBPrice(ctx, region, lbType)
+				if err != nil {
+					d.logger.Warn("failed to get ELB price",
+						"name", name,
+						"type", lbType,
+						"region", region,
+						"error", err)
+				} else {
+					hourlyCost = price
+				}
+			}
+
+			loadBalancers = append(loadBalancers, types.LoadBalancer{
+				AccountID:   accountID,
+				AccountName: accountName,
+				Region:      region,
+				Name:        name,
+				ARN:         arn,
+				Type:        lbType,
+				Scheme:      scheme,
+				State:       state,
+				HourlyCost:  hourlyCost,
+			})
+		}
+	}
+
+	// Discover Classic Load Balancers using v1 API
+	v1Client := elasticloadbalancing.NewFromConfig(cfg)
+	v1Output, err := v1Client.DescribeLoadBalancers(ctx, &elasticloadbalancing.DescribeLoadBalancersInput{})
+	if err != nil {
+		d.logger.Warn("failed to describe classic load balancers",
+			"region", region,
+			"error", err)
+	} else {
+		for _, lb := range v1Output.LoadBalancerDescriptions {
+			name := ""
+			if lb.LoadBalancerName != nil {
+				name = *lb.LoadBalancerName
+			}
+
+			scheme := "internet-facing"
+			if lb.Scheme != nil {
+				scheme = *lb.Scheme
+			}
+
+			// Get pricing for classic load balancers
+			price, err := d.pricingProvider.GetELBPrice(ctx, region, "classic")
+			var hourlyCost types.CostValue
+			if err != nil {
+				d.logger.Warn("failed to get CLB price",
+					"name", name,
+					"region", region,
+					"error", err)
+			} else {
+				hourlyCost = price
+			}
+
+			loadBalancers = append(loadBalancers, types.LoadBalancer{
+				AccountID:   accountID,
+				AccountName: accountName,
+				Region:      region,
+				Name:        name,
+				ARN:         "", // CLB doesn't have ARN in the same way
+				Type:        "classic",
+				Scheme:      scheme,
+				State:       "active", // CLB doesn't have state in the same way
+				HourlyCost:  hourlyCost,
+			})
+		}
+	}
+
+	return loadBalancers, nil
+}
+
 // getEC2Name extracts the Name tag from EC2 instance tags
 func getEC2Name(tags []ec2types.Tag) string {
 	for _, tag := range tags {
@@ -635,7 +866,7 @@ func isRDSNonBillableState(state string) bool {
 }
 
 // buildAccountSummaries builds account-level cost summaries
-func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance) []types.AccountSummary {
+func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer) []types.AccountSummary {
 	summaries := make(map[string]*types.AccountSummary)
 
 	for _, inst := range ec2 {
@@ -686,6 +917,30 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 		summaries[key].TotalCost += inst.HourlyCost
 	}
 
+	for _, cluster := range eks {
+		key := cluster.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   cluster.AccountID,
+				AccountName: cluster.AccountName,
+			}
+		}
+		summaries[key].EKSCount++
+		summaries[key].TotalCost += cluster.HourlyCost
+	}
+
+	for _, lb := range elb {
+		key := lb.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   lb.AccountID,
+				AccountName: lb.AccountName,
+			}
+		}
+		summaries[key].ELBCount++
+		summaries[key].TotalCost += lb.HourlyCost
+	}
+
 	result := make([]types.AccountSummary, 0, len(summaries))
 	for _, s := range summaries {
 		result = append(result, *s)
@@ -694,7 +949,7 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 }
 
 // buildRegionSummaries builds region-level cost summaries
-func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance) []types.RegionSummary {
+func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer) []types.RegionSummary {
 	summaries := make(map[string]*types.RegionSummary)
 
 	for _, inst := range ec2 {
@@ -731,6 +986,24 @@ func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EB
 		}
 		summaries[key].RDSCount++
 		summaries[key].TotalCost += inst.HourlyCost
+	}
+
+	for _, cluster := range eks {
+		key := cluster.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].EKSCount++
+		summaries[key].TotalCost += cluster.HourlyCost
+	}
+
+	for _, lb := range elb {
+		key := lb.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].ELBCount++
+		summaries[key].TotalCost += lb.HourlyCost
 	}
 
 	result := make([]types.RegionSummary, 0, len(summaries))

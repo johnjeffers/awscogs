@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance } from '../../types/cost';
+import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance, EKSCluster, LoadBalancer } from '../../types/cost';
 
 interface CostTableProps {
   accounts?: AccountSummary[];
@@ -8,6 +8,8 @@ interface CostTableProps {
   ebs?: EBSVolume[];
   ecs?: ECSService[];
   rds?: RDSInstance[];
+  eks?: EKSCluster[];
+  elb?: LoadBalancer[];
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -182,6 +184,8 @@ export const CostTable: React.FC<CostTableProps> = ({
   ebs,
   ecs,
   rds,
+  eks,
+  elb,
 }) => {
   const [accountSort, setAccountSort] = useState<SortConfig>({ key: 'accountName', direction: 'asc' });
   const [regionSort, setRegionSort] = useState<SortConfig>({ key: 'region', direction: 'asc' });
@@ -189,6 +193,8 @@ export const CostTable: React.FC<CostTableProps> = ({
   const [ebsSort, setEbsSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
   const [ecsSort, setEcsSort] = useState<SortConfig>({ key: 'serviceName', direction: 'asc' });
   const [rdsSort, setRdsSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
+  const [eksSort, setEksSort] = useState<SortConfig>({ key: 'clusterName', direction: 'asc' });
+  const [elbSort, setElbSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
 
   const [accountPage, setAccountPage] = useState(1);
   const [regionPage, setRegionPage] = useState(1);
@@ -196,6 +202,8 @@ export const CostTable: React.FC<CostTableProps> = ({
   const [ebsPage, setEbsPage] = useState(1);
   const [ecsPage, setEcsPage] = useState(1);
   const [rdsPage, setRdsPage] = useState(1);
+  const [eksPage, setEksPage] = useState(1);
+  const [elbPage, setElbPage] = useState(1);
 
   const [pageSize, setPageSize] = useState<PageSize>(10);
 
@@ -259,6 +267,16 @@ export const CostTable: React.FC<CostTableProps> = ({
     return sortData(rds, rdsSort);
   }, [rds, rdsSort]);
 
+  const sortedEks = useMemo(() => {
+    if (!eks) return [];
+    return sortData(eks, eksSort);
+  }, [eks, eksSort]);
+
+  const sortedElb = useMemo(() => {
+    if (!elb) return [];
+    return sortData(elb, elbSort);
+  }, [elb, elbSort]);
+
   // Accounts table
   if (accounts && accounts.length > 0) {
     const paginatedAccounts = paginate(sortedAccounts, accountPage, pageSize);
@@ -272,6 +290,8 @@ export const CostTable: React.FC<CostTableProps> = ({
               <SortableHeader label="EBS" sortKey="ebsCount" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} align="right" />
               <SortableHeader label="ECS" sortKey="ecsCount" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} align="right" />
               <SortableHeader label="RDS" sortKey="rdsCount" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} align="right" />
+              <SortableHeader label="EKS" sortKey="eksCount" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} align="right" />
+              <SortableHeader label="ELB" sortKey="elbCount" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} align="right" />
               <CostGroupHeader sortKey="totalCost" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} />
             </tr>
             <tr>
@@ -286,6 +306,8 @@ export const CostTable: React.FC<CostTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{account.ebsCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{account.ecsCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{account.rdsCount}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{account.eksCount}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{account.elbCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(account.totalCost)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(account.totalCost), 2)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(account.totalCost), 2)}</td>
@@ -311,6 +333,8 @@ export const CostTable: React.FC<CostTableProps> = ({
               <SortableHeader label="EBS" sortKey="ebsCount" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} align="right" />
               <SortableHeader label="ECS" sortKey="ecsCount" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} align="right" />
               <SortableHeader label="RDS" sortKey="rdsCount" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} align="right" />
+              <SortableHeader label="EKS" sortKey="eksCount" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} align="right" />
+              <SortableHeader label="ELB" sortKey="elbCount" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} align="right" />
               <CostGroupHeader sortKey="totalCost" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} />
             </tr>
             <tr>
@@ -325,6 +349,8 @@ export const CostTable: React.FC<CostTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{region.ebsCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{region.ecsCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{region.rdsCount}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{region.eksCount}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{region.elbCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(region.totalCost)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(region.totalCost), 2)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(region.totalCost), 2)}</td>
@@ -537,6 +563,113 @@ export const CostTable: React.FC<CostTableProps> = ({
           </tbody>
         </table>
         <Pagination currentPage={rdsPage} totalItems={sortedRds.length} pageSize={pageSize} onPageChange={setRdsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setRdsPage(1))} />
+      </div>
+    );
+  }
+
+  // EKS table
+  if (eks && eks.length > 0) {
+    const paginatedEks = paginate(sortedEks, eksPage, pageSize);
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <SortableHeader label="Account" sortKey="accountName" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
+              <SortableHeader label="Region" sortKey="region" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
+              <SortableHeader label="Cluster" sortKey="clusterName" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
+              <SortableHeader label="Status" sortKey="status" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
+              <SortableHeader label="Version" sortKey="version" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
+              <SortableHeader label="Platform" sortKey="platform" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
+              <CostGroupHeader sortKey="hourlyCost" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} />
+            </tr>
+            <tr>
+              <CostSubHeaders />
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedEks.map((cluster) => (
+              <tr key={`${cluster.accountId}-${cluster.region}-${cluster.clusterName}`}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.accountName || cluster.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.region}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{cluster.clusterName}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    cluster.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
+                    cluster.status === 'CREATING' ? 'bg-yellow-100 text-yellow-800' :
+                    cluster.status === 'DELETING' ? 'bg-red-100 text-red-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {cluster.status}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.version}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.platform}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(cluster.hourlyCost)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(cluster.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(cluster.hourlyCost), 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pagination currentPage={eksPage} totalItems={sortedEks.length} pageSize={pageSize} onPageChange={setEksPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEksPage(1))} />
+      </div>
+    );
+  }
+
+  // ELB table
+  if (elb && elb.length > 0) {
+    const paginatedElb = paginate(sortedElb, elbPage, pageSize);
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <SortableHeader label="Account" sortKey="accountName" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <SortableHeader label="Region" sortKey="region" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <SortableHeader label="Name" sortKey="name" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <SortableHeader label="Type" sortKey="type" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <SortableHeader label="Scheme" sortKey="scheme" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <SortableHeader label="State" sortKey="state" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <CostGroupHeader sortKey="hourlyCost" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
+            </tr>
+            <tr>
+              <CostSubHeaders />
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedElb.map((lb) => (
+              <tr key={lb.arn || `${lb.accountId}-${lb.region}-${lb.name}`}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lb.accountName || lb.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lb.region}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{lb.name}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    lb.type === 'application' ? 'bg-blue-100 text-blue-800' :
+                    lb.type === 'network' ? 'bg-purple-100 text-purple-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {lb.type}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lb.scheme}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    lb.state === 'active' ? 'bg-green-100 text-green-800' :
+                    lb.state === 'provisioning' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {lb.state}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(lb.hourlyCost)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(lb.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(lb.hourlyCost), 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pagination currentPage={elbPage} totalItems={sortedElb.length} pageSize={pageSize} onPageChange={setElbPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setElbPage(1))} />
       </div>
     );
   }

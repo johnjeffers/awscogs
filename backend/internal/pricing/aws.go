@@ -23,6 +23,8 @@ type AWSProvider struct {
 	ebsCache      map[string]cogtypes.CostValue // key: "region:volumeType"
 	ecsCache      map[string]cogtypes.CostValue // key: "region:launchType"
 	rdsCache      map[string]cogtypes.CostValue // key: "region:instanceClass:engine:multiAZ"
+	eksCache      map[string]cogtypes.CostValue // key: "region"
+	elbCache      map[string]cogtypes.CostValue // key: "region:lbType"
 	cacheMu       sync.RWMutex
 	cacheExpiry   time.Time
 	cacheDuration time.Duration
@@ -49,6 +51,8 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes int) (*AWSProvider
 		ebsCache:      make(map[string]cogtypes.CostValue),
 		ecsCache:      make(map[string]cogtypes.CostValue),
 		rdsCache:      make(map[string]cogtypes.CostValue),
+		eksCache:      make(map[string]cogtypes.CostValue),
+		elbCache:      make(map[string]cogtypes.CostValue),
 		cacheDuration: time.Duration(cacheDurationMinutes) * time.Minute,
 	}, nil
 }
@@ -262,6 +266,83 @@ func getECSFargatePrice(region string) cogtypes.CostValue {
 	return 0.02469
 }
 
+// GetEKSPrice returns the hourly price for an EKS cluster control plane
+// EKS control plane pricing is $0.10/hour across all regions
+func (p *AWSProvider) GetEKSPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	cacheKey := region
+
+	// Check cache first
+	p.cacheMu.RLock()
+	if price, ok := p.eksCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		p.cacheMu.RUnlock()
+		return price, nil
+	}
+	p.cacheMu.RUnlock()
+
+	// EKS control plane is $0.10/hour (fixed price across regions)
+	price := getEKSFallbackPrice()
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.eksCache[cacheKey] = price
+	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+		p.cacheExpiry = time.Now().Add(p.cacheDuration)
+	}
+	p.cacheMu.Unlock()
+
+	return price, nil
+}
+
+// getEKSFallbackPrice returns the standard EKS control plane price
+func getEKSFallbackPrice() cogtypes.CostValue {
+	// EKS control plane is $0.10/hour (standard across all regions)
+	return 0.10
+}
+
+// GetELBPrice returns the hourly price for a load balancer by type
+func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (cogtypes.CostValue, error) {
+	cacheKey := fmt.Sprintf("%s:%s", region, lbType)
+
+	// Check cache first
+	p.cacheMu.RLock()
+	if price, ok := p.elbCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		p.cacheMu.RUnlock()
+		return price, nil
+	}
+	p.cacheMu.RUnlock()
+
+	// Get fallback price based on load balancer type
+	price := getELBFallbackPrice(lbType)
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.elbCache[cacheKey] = price
+	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+		p.cacheExpiry = time.Now().Add(p.cacheDuration)
+	}
+	p.cacheMu.Unlock()
+
+	return price, nil
+}
+
+// getELBFallbackPrice returns the base hourly price for load balancers by type
+func getELBFallbackPrice(lbType string) cogtypes.CostValue {
+	switch lbType {
+	case "application":
+		// ALB: $0.0225/hour base
+		return 0.0225
+	case "network":
+		// NLB: $0.0225/hour base
+		return 0.0225
+	case "classic":
+		// CLB: $0.025/hour base
+		return 0.025
+	default:
+		// Default to ALB pricing
+		return 0.0225
+	}
+}
+
 // RefreshCache forces a refresh of the pricing cache
 func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.cacheMu.Lock()
@@ -269,6 +350,8 @@ func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.ebsCache = make(map[string]cogtypes.CostValue)
 	p.ecsCache = make(map[string]cogtypes.CostValue)
 	p.rdsCache = make(map[string]cogtypes.CostValue)
+	p.eksCache = make(map[string]cogtypes.CostValue)
+	p.elbCache = make(map[string]cogtypes.CostValue)
 	p.cacheExpiry = time.Time{}
 	p.cacheMu.Unlock()
 	return nil

@@ -48,6 +48,8 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 		r.Get("/costs/ebs", costsHandler.GetEBSCosts)
 		r.Get("/costs/ecs", costsHandler.GetECSCosts)
 		r.Get("/costs/rds", costsHandler.GetRDSCosts)
+		r.Get("/costs/eks", costsHandler.GetEKSCosts)
+		r.Get("/costs/elb", costsHandler.GetELBCosts)
 	})
 
 	return r

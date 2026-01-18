@@ -8,6 +8,8 @@ export interface CostResponse {
   ebsVolumes?: EBSVolume[];
   rdsInstances?: RDSInstance[];
   ecsServices?: ECSService[];
+  eksClusters?: EKSCluster[];
+  loadBalancers?: LoadBalancer[];
   filters: AppliedFilters;
 }
 
@@ -18,6 +20,8 @@ export interface AccountSummary {
   ebsCount: number;
   rdsCount: number;
   ecsCount: number;
+  eksCount: number;
+  elbCount: number;
   totalCost: number;
 }
 
@@ -27,6 +31,8 @@ export interface RegionSummary {
   ebsCount: number;
   rdsCount: number;
   ecsCount: number;
+  eksCount: number;
+  elbCount: number;
   totalCost: number;
 }
 
@@ -84,6 +90,29 @@ export interface ECSService {
   hourlyCost: number;
 }
 
+export interface EKSCluster {
+  accountId: string;
+  accountName: string;
+  region: string;
+  clusterName: string;
+  status: string;
+  version: string;
+  platform: string;
+  hourlyCost: number;
+}
+
+export interface LoadBalancer {
+  accountId: string;
+  accountName: string;
+  region: string;
+  name: string;
+  arn: string;
+  type: string;
+  scheme: string;
+  state: string;
+  hourlyCost: number;
+}
+
 export interface AppliedFilters {
   accounts?: string[];
   regions?: string[];
@@ -96,7 +125,7 @@ export interface CostFilters {
   resources?: string[];
 }
 
-export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds'] as const;
+export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb'] as const;
 export type ResourceType = typeof RESOURCE_TYPES[number];
 
 export interface ConfigResponse {

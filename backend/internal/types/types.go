@@ -61,6 +61,31 @@ type ECSService struct {
 	HourlyCost   CostValue `json:"hourlyCost"`
 }
 
+// EKSCluster represents an EKS cluster with its cost
+type EKSCluster struct {
+	AccountID   string    `json:"accountId"`
+	AccountName string    `json:"accountName"`
+	Region      string    `json:"region"`
+	ClusterName string    `json:"clusterName"`
+	Status      string    `json:"status"`
+	Version     string    `json:"version"`
+	Platform    string    `json:"platform"` // linux, windows
+	HourlyCost  CostValue `json:"hourlyCost"`
+}
+
+// LoadBalancer represents an Elastic Load Balancer with its cost
+type LoadBalancer struct {
+	AccountID   string    `json:"accountId"`
+	AccountName string    `json:"accountName"`
+	Region      string    `json:"region"`
+	Name        string    `json:"name"`
+	ARN         string    `json:"arn"`
+	Type        string    `json:"type"`   // application, network, classic
+	Scheme      string    `json:"scheme"` // internet-facing, internal
+	State       string    `json:"state"`
+	HourlyCost  CostValue `json:"hourlyCost"`
+}
+
 // AccountSummary represents cost summary for an AWS account
 type AccountSummary struct {
 	AccountID   string    `json:"accountId"`
@@ -69,6 +94,8 @@ type AccountSummary struct {
 	EBSCount    int       `json:"ebsCount"`
 	ECSCount    int       `json:"ecsCount"`
 	RDSCount    int       `json:"rdsCount"`
+	EKSCount    int       `json:"eksCount"`
+	ELBCount    int       `json:"elbCount"`
 	TotalCost   CostValue `json:"totalCost"`
 }
 
@@ -79,21 +106,25 @@ type RegionSummary struct {
 	EBSCount  int       `json:"ebsCount"`
 	ECSCount  int       `json:"ecsCount"`
 	RDSCount  int       `json:"rdsCount"`
+	EKSCount  int       `json:"eksCount"`
+	ELBCount  int       `json:"elbCount"`
 	TotalCost CostValue `json:"totalCost"`
 }
 
 // CostResponse is the API response for cost data
 type CostResponse struct {
-	Timestamp    string           `json:"timestamp"`
-	TotalCost    CostValue        `json:"totalCost"`
-	Currency     string           `json:"currency"`
-	Accounts     []AccountSummary `json:"accounts,omitempty"`
-	Regions      []RegionSummary  `json:"regions,omitempty"`
-	EC2Instances []EC2Instance    `json:"ec2Instances,omitempty"`
-	EBSVolumes   []EBSVolume      `json:"ebsVolumes,omitempty"`
-	ECSServices  []ECSService     `json:"ecsServices,omitempty"`
-	RDSInstances []RDSInstance    `json:"rdsInstances,omitempty"`
-	Filters      AppliedFilters   `json:"filters"`
+	Timestamp     string           `json:"timestamp"`
+	TotalCost     CostValue        `json:"totalCost"`
+	Currency      string           `json:"currency"`
+	Accounts      []AccountSummary `json:"accounts,omitempty"`
+	Regions       []RegionSummary  `json:"regions,omitempty"`
+	EC2Instances  []EC2Instance    `json:"ec2Instances,omitempty"`
+	EBSVolumes    []EBSVolume      `json:"ebsVolumes,omitempty"`
+	ECSServices   []ECSService     `json:"ecsServices,omitempty"`
+	RDSInstances  []RDSInstance    `json:"rdsInstances,omitempty"`
+	EKSClusters   []EKSCluster     `json:"eksClusters,omitempty"`
+	LoadBalancers []LoadBalancer   `json:"loadBalancers,omitempty"`
+	Filters       AppliedFilters   `json:"filters"`
 }
 
 // AppliedFilters shows what filters were applied to the response

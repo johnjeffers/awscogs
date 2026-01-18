@@ -5,7 +5,7 @@ import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
 
-type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds';
+type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds' | 'eks' | 'elb';
 
 const allTabs: { id: TabType; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
@@ -14,6 +14,8 @@ const allTabs: { id: TabType; label: string }[] = [
   { id: 'ebs', label: 'EBS' },
   { id: 'ecs', label: 'ECS' },
   { id: 'rds', label: 'RDS' },
+  { id: 'eks', label: 'EKS' },
+  { id: 'elb', label: 'ELB' },
 ];
 
 export const CostDashboard: React.FC = () => {
@@ -104,6 +106,12 @@ export const CostDashboard: React.FC = () => {
       rds: data.rdsInstances?.filter((inst) =>
         matchesFilter([inst.name, inst.dbInstanceId, inst.engine, inst.instanceClass, inst.region, inst.accountName])
       ),
+      eks: data.eksClusters?.filter((cluster) =>
+        matchesFilter([cluster.clusterName, cluster.version, cluster.status, cluster.region, cluster.accountName])
+      ),
+      elb: data.loadBalancers?.filter((lb) =>
+        matchesFilter([lb.name, lb.type, lb.scheme, lb.state, lb.region, lb.accountName])
+      ),
     };
   }, [data, filter]);
 
@@ -116,6 +124,8 @@ export const CostDashboard: React.FC = () => {
       case 'ebs': return { filtered: filteredData?.ebs?.length || 0, total: data.ebsVolumes?.length || 0 };
       case 'ecs': return { filtered: filteredData?.ecs?.length || 0, total: data.ecsServices?.length || 0 };
       case 'rds': return { filtered: filteredData?.rds?.length || 0, total: data.rdsInstances?.length || 0 };
+      case 'eks': return { filtered: filteredData?.eks?.length || 0, total: data.eksClusters?.length || 0 };
+      case 'elb': return { filtered: filteredData?.elb?.length || 0, total: data.loadBalancers?.length || 0 };
     }
   };
 
@@ -130,6 +140,8 @@ export const CostDashboard: React.FC = () => {
   const ebsCount = data?.ebsVolumes?.length || 0;
   const ecsCount = data?.ecsServices?.length || 0;
   const rdsCount = data?.rdsInstances?.length || 0;
+  const eksCount = data?.eksClusters?.length || 0;
+  const elbCount = data?.loadBalancers?.length || 0;
 
   const exportToCSV = () => {
     if (!filteredData) return;
@@ -228,6 +240,34 @@ export const CostDashboard: React.FC = () => {
           monthlyCost(inst.hourlyCost).toFixed(2),
         ]);
         break;
+      case 'eks':
+        headers = ['Account', 'Region', 'Cluster', 'Status', 'Version', 'Platform', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.eks || []).map(cluster => [
+          cluster.accountName || cluster.accountId,
+          cluster.region,
+          cluster.clusterName,
+          cluster.status,
+          cluster.version,
+          cluster.platform,
+          cluster.hourlyCost.toFixed(4),
+          dailyCost(cluster.hourlyCost).toFixed(2),
+          monthlyCost(cluster.hourlyCost).toFixed(2),
+        ]);
+        break;
+      case 'elb':
+        headers = ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.elb || []).map(lb => [
+          lb.accountName || lb.accountId,
+          lb.region,
+          lb.name,
+          lb.type,
+          lb.scheme,
+          lb.state,
+          lb.hourlyCost.toFixed(4),
+          dailyCost(lb.hourlyCost).toFixed(2),
+          monthlyCost(lb.hourlyCost).toFixed(2),
+        ]);
+        break;
     }
 
     const escapeCSV = (value: string) => {
@@ -291,6 +331,8 @@ export const CostDashboard: React.FC = () => {
             ebsCount={ebsCount}
             ecsCount={ecsCount}
             rdsCount={rdsCount}
+            eksCount={eksCount}
+            elbCount={elbCount}
             currency={data.currency}
           />
 
@@ -380,6 +422,12 @@ export const CostDashboard: React.FC = () => {
               )}
               {activeTab === 'rds' && (
                 <CostTable rds={filteredData?.rds} />
+              )}
+              {activeTab === 'eks' && (
+                <CostTable eks={filteredData?.eks} />
+              )}
+              {activeTab === 'elb' && (
+                <CostTable elb={filteredData?.elb} />
               )}
             </div>
           </div>

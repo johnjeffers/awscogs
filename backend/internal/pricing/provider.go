@@ -20,6 +20,12 @@ type Provider interface {
 	// GetECSPrice returns the hourly price for an ECS Fargate service
 	GetECSPrice(ctx context.Context, region, launchType string, runningCount int32) (types.CostValue, error)
 
+	// GetEKSPrice returns the hourly price for an EKS cluster control plane
+	GetEKSPrice(ctx context.Context, region string) (types.CostValue, error)
+
+	// GetELBPrice returns the hourly price for a load balancer by type
+	GetELBPrice(ctx context.Context, region, lbType string) (types.CostValue, error)
+
 	// RefreshCache forces a refresh of the pricing cache
 	RefreshCache(ctx context.Context) error
 }

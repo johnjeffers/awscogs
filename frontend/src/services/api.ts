@@ -81,6 +81,30 @@ export const costApi = {
     const response = await api.get<CostResponse>(`/costs/rds?${params.toString()}`);
     return response.data;
   },
+
+  async getEKSCosts(filters: CostFilters = {}): Promise<CostResponse> {
+    const params = new URLSearchParams();
+    if (filters.accounts?.length) {
+      params.set('account', filters.accounts.join(','));
+    }
+    if (filters.regions?.length) {
+      params.set('region', filters.regions.join(','));
+    }
+    const response = await api.get<CostResponse>(`/costs/eks?${params.toString()}`);
+    return response.data;
+  },
+
+  async getELBCosts(filters: CostFilters = {}): Promise<CostResponse> {
+    const params = new URLSearchParams();
+    if (filters.accounts?.length) {
+      params.set('account', filters.accounts.join(','));
+    }
+    if (filters.regions?.length) {
+      params.set('region', filters.regions.join(','));
+    }
+    const response = await api.get<CostResponse>(`/costs/elb?${params.toString()}`);
+    return response.data;
+  },
 };
 
 export const configApi = {
