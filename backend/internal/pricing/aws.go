@@ -25,6 +25,9 @@ type AWSProvider struct {
 	rdsCache      map[string]cogtypes.CostValue // key: "region:instanceClass:engine:multiAZ"
 	eksCache      map[string]cogtypes.CostValue // key: "region"
 	elbCache      map[string]cogtypes.CostValue // key: "region:lbType"
+	natCache      map[string]cogtypes.CostValue // key: "region"
+	eipCache      map[string]cogtypes.CostValue // key: "region:associated"
+	secretCache   map[string]cogtypes.CostValue // key: "region"
 	cacheMu       sync.RWMutex
 	cacheExpiry   time.Time
 	cacheDuration time.Duration
@@ -53,6 +56,9 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes int) (*AWSProvider
 		rdsCache:      make(map[string]cogtypes.CostValue),
 		eksCache:      make(map[string]cogtypes.CostValue),
 		elbCache:      make(map[string]cogtypes.CostValue),
+		natCache:      make(map[string]cogtypes.CostValue),
+		eipCache:      make(map[string]cogtypes.CostValue),
+		secretCache:   make(map[string]cogtypes.CostValue),
 		cacheDuration: time.Duration(cacheDurationMinutes) * time.Minute,
 	}, nil
 }
@@ -343,6 +349,114 @@ func getELBFallbackPrice(lbType string) cogtypes.CostValue {
 	}
 }
 
+// GetNATGatewayPrice returns the hourly price for a NAT Gateway
+// NAT Gateway pricing is $0.045/hour across most regions
+func (p *AWSProvider) GetNATGatewayPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	cacheKey := region
+
+	// Check cache first
+	p.cacheMu.RLock()
+	if price, ok := p.natCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		p.cacheMu.RUnlock()
+		return price, nil
+	}
+	p.cacheMu.RUnlock()
+
+	// NAT Gateway is $0.045/hour (standard across most regions)
+	price := getNATGatewayFallbackPrice()
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.natCache[cacheKey] = price
+	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+		p.cacheExpiry = time.Now().Add(p.cacheDuration)
+	}
+	p.cacheMu.Unlock()
+
+	return price, nil
+}
+
+// getNATGatewayFallbackPrice returns the standard NAT Gateway hourly price
+func getNATGatewayFallbackPrice() cogtypes.CostValue {
+	// NAT Gateway is $0.045/hour (standard across most regions)
+	return 0.045
+}
+
+// GetElasticIPPrice returns the hourly price for an Elastic IP
+// EIPs cost $0.005/hour when NOT associated with a running instance
+// Associated EIPs attached to running instances are free
+func (p *AWSProvider) GetElasticIPPrice(ctx context.Context, region string, isAssociated bool) (cogtypes.CostValue, error) {
+	associated := "false"
+	if isAssociated {
+		associated = "true"
+	}
+	cacheKey := fmt.Sprintf("%s:%s", region, associated)
+
+	// Check cache first
+	p.cacheMu.RLock()
+	if price, ok := p.eipCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		p.cacheMu.RUnlock()
+		return price, nil
+	}
+	p.cacheMu.RUnlock()
+
+	// EIP pricing: free when associated, $0.005/hour when not
+	price := getElasticIPFallbackPrice(isAssociated)
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.eipCache[cacheKey] = price
+	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+		p.cacheExpiry = time.Now().Add(p.cacheDuration)
+	}
+	p.cacheMu.Unlock()
+
+	return price, nil
+}
+
+// getElasticIPFallbackPrice returns the EIP hourly price based on association status
+func getElasticIPFallbackPrice(isAssociated bool) cogtypes.CostValue {
+	if isAssociated {
+		// EIPs attached to running instances are free
+		return 0
+	}
+	// Unassociated EIPs cost $0.005/hour
+	return 0.005
+}
+
+// GetSecretPrice returns the hourly price for a Secrets Manager secret
+// Secrets Manager charges $0.40/secret/month
+func (p *AWSProvider) GetSecretPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	cacheKey := region
+
+	// Check cache first
+	p.cacheMu.RLock()
+	if price, ok := p.secretCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		p.cacheMu.RUnlock()
+		return price, nil
+	}
+	p.cacheMu.RUnlock()
+
+	// Secrets Manager: $0.40/secret/month = $0.40/730 hours
+	price := getSecretFallbackPrice()
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.secretCache[cacheKey] = price
+	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+		p.cacheExpiry = time.Now().Add(p.cacheDuration)
+	}
+	p.cacheMu.Unlock()
+
+	return price, nil
+}
+
+// getSecretFallbackPrice returns the hourly price for a secret
+func getSecretFallbackPrice() cogtypes.CostValue {
+	// $0.40/secret/month = $0.40/730 hours ≈ $0.000548/hour
+	return cogtypes.CostValue(0.40 / 730.0)
+}
+
 // RefreshCache forces a refresh of the pricing cache
 func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.cacheMu.Lock()
@@ -352,6 +466,9 @@ func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.rdsCache = make(map[string]cogtypes.CostValue)
 	p.eksCache = make(map[string]cogtypes.CostValue)
 	p.elbCache = make(map[string]cogtypes.CostValue)
+	p.natCache = make(map[string]cogtypes.CostValue)
+	p.eipCache = make(map[string]cogtypes.CostValue)
+	p.secretCache = make(map[string]cogtypes.CostValue)
 	p.cacheExpiry = time.Time{}
 	p.cacheMu.Unlock()
 	return nil

@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/iam"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/pricing"
@@ -48,15 +49,18 @@ type Account struct {
 // DiscoverResources discovers all resources across the specified accounts and regions
 func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string) (*types.CostResponse, error) {
 	var (
-		allEC2    []types.EC2Instance
-		allEBS    []types.EBSVolume
-		allECS    []types.ECSService
-		allRDS    []types.RDSInstance
-		allEKS    []types.EKSCluster
-		allELB    []types.LoadBalancer
-		mu        sync.Mutex
-		wg        sync.WaitGroup
-		totalCost types.CostValue
+		allEC2     []types.EC2Instance
+		allEBS     []types.EBSVolume
+		allECS     []types.ECSService
+		allRDS     []types.RDSInstance
+		allEKS     []types.EKSCluster
+		allELB     []types.LoadBalancer
+		allNAT     []types.NATGateway
+		allEIP     []types.ElasticIP
+		allSecrets []types.Secret
+		mu         sync.Mutex
+		wg         sync.WaitGroup
+		totalCost  types.CostValue
 	)
 
 	// If no accounts specified, use default credentials
@@ -152,6 +156,33 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 						"error", err)
 				}
 
+				// Discover NAT Gateways
+				natGateways, err := d.discoverNATGateways(ctx, cfg, accountID, accountName, reg)
+				if err != nil {
+					d.logger.Error("failed to discover NAT gateways",
+						"account", acc.Name,
+						"region", reg,
+						"error", err)
+				}
+
+				// Discover Elastic IPs
+				elasticIPs, err := d.discoverElasticIPs(ctx, cfg, accountID, accountName, reg)
+				if err != nil {
+					d.logger.Error("failed to discover Elastic IPs",
+						"account", acc.Name,
+						"region", reg,
+						"error", err)
+				}
+
+				// Discover Secrets
+				secrets, err := d.discoverSecrets(ctx, cfg, accountID, accountName, reg)
+				if err != nil {
+					d.logger.Error("failed to discover secrets",
+						"account", acc.Name,
+						"region", reg,
+						"error", err)
+				}
+
 				mu.Lock()
 				allEC2 = append(allEC2, ec2Instances...)
 				allEBS = append(allEBS, ebsVolumes...)
@@ -159,6 +190,9 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 				allRDS = append(allRDS, rdsInstances...)
 				allEKS = append(allEKS, eksClusters...)
 				allELB = append(allELB, loadBalancers...)
+				allNAT = append(allNAT, natGateways...)
+				allEIP = append(allEIP, elasticIPs...)
+				allSecrets = append(allSecrets, secrets...)
 				mu.Unlock()
 			}(account, region)
 		}
@@ -185,10 +219,19 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 	for _, lb := range allELB {
 		totalCost += lb.HourlyCost
 	}
+	for _, nat := range allNAT {
+		totalCost += nat.HourlyCost
+	}
+	for _, eip := range allEIP {
+		totalCost += eip.HourlyCost
+	}
+	for _, secret := range allSecrets {
+		totalCost += secret.HourlyCost
+	}
 
 	// Build account and region summaries
-	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB)
-	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB)
+	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets)
+	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets)
 
 	return &types.CostResponse{
 		TotalCost:     totalCost,
@@ -201,6 +244,9 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		RDSInstances:  allRDS,
 		EKSClusters:   allEKS,
 		LoadBalancers: allELB,
+		NATGateways:   allNAT,
+		ElasticIPs:    allEIP,
+		Secrets:       allSecrets,
 	}, nil
 }
 
@@ -834,6 +880,201 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 	return loadBalancers, nil
 }
 
+// discoverNATGateways discovers NAT Gateways in the specified region
+func (d *Discovery) discoverNATGateways(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.NATGateway, error) {
+	client := ec2.NewFromConfig(cfg)
+
+	var gateways []types.NATGateway
+	paginator := ec2.NewDescribeNatGatewaysPaginator(client, &ec2.DescribeNatGatewaysInput{})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describing NAT gateways: %w", err)
+		}
+
+		for _, nat := range page.NatGateways {
+			// Skip deleted NAT gateways
+			state := string(nat.State)
+			if state == "deleted" || state == "deleting" {
+				continue
+			}
+
+			id := ""
+			if nat.NatGatewayId != nil {
+				id = *nat.NatGatewayId
+			}
+
+			name := getNATGatewayName(nat.Tags)
+
+			natType := "public"
+			if nat.ConnectivityType != "" {
+				natType = string(nat.ConnectivityType)
+			}
+
+			vpcID := ""
+			if nat.VpcId != nil {
+				vpcID = *nat.VpcId
+			}
+
+			subnetID := ""
+			if nat.SubnetId != nil {
+				subnetID = *nat.SubnetId
+			}
+
+			// Get pricing for available NAT gateways
+			var hourlyCost types.CostValue
+			if state == "available" {
+				price, err := d.pricingProvider.GetNATGatewayPrice(ctx, region)
+				if err != nil {
+					d.logger.Warn("failed to get NAT Gateway price",
+						"id", id,
+						"region", region,
+						"error", err)
+				} else {
+					hourlyCost = price
+				}
+			}
+
+			gateways = append(gateways, types.NATGateway{
+				AccountID:   accountID,
+				AccountName: accountName,
+				Region:      region,
+				ID:          id,
+				Name:        name,
+				State:       state,
+				Type:        natType,
+				VPCID:       vpcID,
+				SubnetID:    subnetID,
+				HourlyCost:  hourlyCost,
+			})
+		}
+	}
+
+	return gateways, nil
+}
+
+// discoverElasticIPs discovers Elastic IP addresses in the specified region
+func (d *Discovery) discoverElasticIPs(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.ElasticIP, error) {
+	client := ec2.NewFromConfig(cfg)
+
+	output, err := client.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{})
+	if err != nil {
+		return nil, fmt.Errorf("describing Elastic IPs: %w", err)
+	}
+
+	var elasticIPs []types.ElasticIP
+
+	for _, addr := range output.Addresses {
+		allocationID := ""
+		if addr.AllocationId != nil {
+			allocationID = *addr.AllocationId
+		}
+
+		publicIP := ""
+		if addr.PublicIp != nil {
+			publicIP = *addr.PublicIp
+		}
+
+		name := getElasticIPName(addr.Tags)
+
+		associationID := ""
+		if addr.AssociationId != nil {
+			associationID = *addr.AssociationId
+		}
+
+		instanceID := ""
+		if addr.InstanceId != nil {
+			instanceID = *addr.InstanceId
+		}
+
+		isAssociated := associationID != ""
+
+		// Get pricing - only unassociated EIPs cost money
+		price, err := d.pricingProvider.GetElasticIPPrice(ctx, region, isAssociated)
+		var hourlyCost types.CostValue
+		if err != nil {
+			d.logger.Warn("failed to get Elastic IP price",
+				"allocationId", allocationID,
+				"region", region,
+				"error", err)
+		} else {
+			hourlyCost = price
+		}
+
+		elasticIPs = append(elasticIPs, types.ElasticIP{
+			AccountID:     accountID,
+			AccountName:   accountName,
+			Region:        region,
+			AllocationID:  allocationID,
+			PublicIP:      publicIP,
+			Name:          name,
+			AssociationID: associationID,
+			InstanceID:    instanceID,
+			IsAssociated:  isAssociated,
+			HourlyCost:    hourlyCost,
+		})
+	}
+
+	return elasticIPs, nil
+}
+
+// discoverSecrets discovers Secrets Manager secrets in the specified region
+func (d *Discovery) discoverSecrets(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.Secret, error) {
+	client := secretsmanager.NewFromConfig(cfg)
+
+	var secrets []types.Secret
+	paginator := secretsmanager.NewListSecretsPaginator(client, &secretsmanager.ListSecretsInput{})
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing secrets: %w", err)
+		}
+
+		for _, secret := range page.SecretList {
+			name := ""
+			if secret.Name != nil {
+				name = *secret.Name
+			}
+
+			arn := ""
+			if secret.ARN != nil {
+				arn = *secret.ARN
+			}
+
+			description := ""
+			if secret.Description != nil {
+				description = *secret.Description
+			}
+
+			// Get pricing
+			price, err := d.pricingProvider.GetSecretPrice(ctx, region)
+			var hourlyCost types.CostValue
+			if err != nil {
+				d.logger.Warn("failed to get Secret price",
+					"name", name,
+					"region", region,
+					"error", err)
+			} else {
+				hourlyCost = price
+			}
+
+			secrets = append(secrets, types.Secret{
+				AccountID:   accountID,
+				AccountName: accountName,
+				Region:      region,
+				Name:        name,
+				ARN:         arn,
+				Description: description,
+				HourlyCost:  hourlyCost,
+			})
+		}
+	}
+
+	return secrets, nil
+}
+
 // getEC2Name extracts the Name tag from EC2 instance tags
 func getEC2Name(tags []ec2types.Tag) string {
 	for _, tag := range tags {
@@ -854,6 +1095,26 @@ func getEBSName(tags []ec2types.Tag) string {
 	return ""
 }
 
+// getNATGatewayName extracts the Name tag from NAT Gateway tags
+func getNATGatewayName(tags []ec2types.Tag) string {
+	for _, tag := range tags {
+		if tag.Key != nil && *tag.Key == "Name" && tag.Value != nil {
+			return *tag.Value
+		}
+	}
+	return ""
+}
+
+// getElasticIPName extracts the Name tag from Elastic IP tags
+func getElasticIPName(tags []ec2types.Tag) string {
+	for _, tag := range tags {
+		if tag.Key != nil && *tag.Key == "Name" && tag.Value != nil {
+			return *tag.Value
+		}
+	}
+	return ""
+}
+
 // isRDSNonBillableState returns true if the RDS instance state is non-billable
 func isRDSNonBillableState(state string) bool {
 	switch state {
@@ -866,7 +1127,7 @@ func isRDSNonBillableState(state string) bool {
 }
 
 // buildAccountSummaries builds account-level cost summaries
-func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer) []types.AccountSummary {
+func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret) []types.AccountSummary {
 	summaries := make(map[string]*types.AccountSummary)
 
 	for _, inst := range ec2 {
@@ -941,6 +1202,42 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 		summaries[key].TotalCost += lb.HourlyCost
 	}
 
+	for _, gw := range nat {
+		key := gw.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   gw.AccountID,
+				AccountName: gw.AccountName,
+			}
+		}
+		summaries[key].NATCount++
+		summaries[key].TotalCost += gw.HourlyCost
+	}
+
+	for _, ip := range eip {
+		key := ip.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   ip.AccountID,
+				AccountName: ip.AccountName,
+			}
+		}
+		summaries[key].EIPCount++
+		summaries[key].TotalCost += ip.HourlyCost
+	}
+
+	for _, secret := range secrets {
+		key := secret.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   secret.AccountID,
+				AccountName: secret.AccountName,
+			}
+		}
+		summaries[key].SecretCount++
+		summaries[key].TotalCost += secret.HourlyCost
+	}
+
 	result := make([]types.AccountSummary, 0, len(summaries))
 	for _, s := range summaries {
 		result = append(result, *s)
@@ -949,7 +1246,7 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 }
 
 // buildRegionSummaries builds region-level cost summaries
-func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer) []types.RegionSummary {
+func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret) []types.RegionSummary {
 	summaries := make(map[string]*types.RegionSummary)
 
 	for _, inst := range ec2 {
@@ -1004,6 +1301,33 @@ func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EB
 		}
 		summaries[key].ELBCount++
 		summaries[key].TotalCost += lb.HourlyCost
+	}
+
+	for _, gw := range nat {
+		key := gw.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].NATCount++
+		summaries[key].TotalCost += gw.HourlyCost
+	}
+
+	for _, ip := range eip {
+		key := ip.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].EIPCount++
+		summaries[key].TotalCost += ip.HourlyCost
+	}
+
+	for _, secret := range secrets {
+		key := secret.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].SecretCount++
+		summaries[key].TotalCost += secret.HourlyCost
 	}
 
 	result := make([]types.RegionSummary, 0, len(summaries))

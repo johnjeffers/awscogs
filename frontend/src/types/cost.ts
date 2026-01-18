@@ -10,6 +10,9 @@ export interface CostResponse {
   ecsServices?: ECSService[];
   eksClusters?: EKSCluster[];
   loadBalancers?: LoadBalancer[];
+  natGateways?: NATGateway[];
+  elasticIps?: ElasticIP[];
+  secrets?: Secret[];
   filters: AppliedFilters;
 }
 
@@ -22,6 +25,9 @@ export interface AccountSummary {
   ecsCount: number;
   eksCount: number;
   elbCount: number;
+  natCount: number;
+  eipCount: number;
+  secretCount: number;
   totalCost: number;
 }
 
@@ -33,6 +39,9 @@ export interface RegionSummary {
   ecsCount: number;
   eksCount: number;
   elbCount: number;
+  natCount: number;
+  eipCount: number;
+  secretCount: number;
   totalCost: number;
 }
 
@@ -113,6 +122,42 @@ export interface LoadBalancer {
   hourlyCost: number;
 }
 
+export interface NATGateway {
+  accountId: string;
+  accountName: string;
+  region: string;
+  id: string;
+  name: string;
+  state: string;
+  type: string;
+  vpcId: string;
+  subnetId: string;
+  hourlyCost: number;
+}
+
+export interface ElasticIP {
+  accountId: string;
+  accountName: string;
+  region: string;
+  allocationId: string;
+  publicIp: string;
+  name: string;
+  associationId: string;
+  instanceId: string;
+  isAssociated: boolean;
+  hourlyCost: number;
+}
+
+export interface Secret {
+  accountId: string;
+  accountName: string;
+  region: string;
+  name: string;
+  arn: string;
+  description: string;
+  hourlyCost: number;
+}
+
 export interface AppliedFilters {
   accounts?: string[];
   regions?: string[];
@@ -125,7 +170,7 @@ export interface CostFilters {
   resources?: string[];
 }
 
-export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb'] as const;
+export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb', 'nat', 'eip', 'secrets'] as const;
 export type ResourceType = typeof RESOURCE_TYPES[number];
 
 export interface ConfigResponse {

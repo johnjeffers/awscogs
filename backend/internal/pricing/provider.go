@@ -26,6 +26,16 @@ type Provider interface {
 	// GetELBPrice returns the hourly price for a load balancer by type
 	GetELBPrice(ctx context.Context, region, lbType string) (types.CostValue, error)
 
+	// GetNATGatewayPrice returns the hourly price for a NAT Gateway
+	GetNATGatewayPrice(ctx context.Context, region string) (types.CostValue, error)
+
+	// GetElasticIPPrice returns the hourly price for an Elastic IP
+	// isAssociated indicates if the EIP is attached to a running instance
+	GetElasticIPPrice(ctx context.Context, region string, isAssociated bool) (types.CostValue, error)
+
+	// GetSecretPrice returns the hourly price for a Secrets Manager secret
+	GetSecretPrice(ctx context.Context, region string) (types.CostValue, error)
+
 	// RefreshCache forces a refresh of the pricing cache
 	RefreshCache(ctx context.Context) error
 }

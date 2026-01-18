@@ -86,6 +86,45 @@ type LoadBalancer struct {
 	HourlyCost  CostValue `json:"hourlyCost"`
 }
 
+// NATGateway represents a NAT Gateway with its cost
+type NATGateway struct {
+	AccountID   string    `json:"accountId"`
+	AccountName string    `json:"accountName"`
+	Region      string    `json:"region"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	State       string    `json:"state"`
+	Type        string    `json:"type"` // public, private
+	VPCID       string    `json:"vpcId"`
+	SubnetID    string    `json:"subnetId"`
+	HourlyCost  CostValue `json:"hourlyCost"`
+}
+
+// ElasticIP represents an Elastic IP address with its cost
+type ElasticIP struct {
+	AccountID      string    `json:"accountId"`
+	AccountName    string    `json:"accountName"`
+	Region         string    `json:"region"`
+	AllocationID   string    `json:"allocationId"`
+	PublicIP       string    `json:"publicIp"`
+	Name           string    `json:"name"`
+	AssociationID  string    `json:"associationId"`
+	InstanceID     string    `json:"instanceId"`
+	IsAssociated   bool      `json:"isAssociated"`
+	HourlyCost     CostValue `json:"hourlyCost"`
+}
+
+// Secret represents a Secrets Manager secret with its cost
+type Secret struct {
+	AccountID   string    `json:"accountId"`
+	AccountName string    `json:"accountName"`
+	Region      string    `json:"region"`
+	Name        string    `json:"name"`
+	ARN         string    `json:"arn"`
+	Description string    `json:"description"`
+	HourlyCost  CostValue `json:"hourlyCost"`
+}
+
 // AccountSummary represents cost summary for an AWS account
 type AccountSummary struct {
 	AccountID   string    `json:"accountId"`
@@ -96,19 +135,25 @@ type AccountSummary struct {
 	RDSCount    int       `json:"rdsCount"`
 	EKSCount    int       `json:"eksCount"`
 	ELBCount    int       `json:"elbCount"`
+	NATCount    int       `json:"natCount"`
+	EIPCount    int       `json:"eipCount"`
+	SecretCount int       `json:"secretCount"`
 	TotalCost   CostValue `json:"totalCost"`
 }
 
 // RegionSummary represents cost summary for a region
 type RegionSummary struct {
-	Region    string    `json:"region"`
-	EC2Count  int       `json:"ec2Count"`
-	EBSCount  int       `json:"ebsCount"`
-	ECSCount  int       `json:"ecsCount"`
-	RDSCount  int       `json:"rdsCount"`
-	EKSCount  int       `json:"eksCount"`
-	ELBCount  int       `json:"elbCount"`
-	TotalCost CostValue `json:"totalCost"`
+	Region      string    `json:"region"`
+	EC2Count    int       `json:"ec2Count"`
+	EBSCount    int       `json:"ebsCount"`
+	ECSCount    int       `json:"ecsCount"`
+	RDSCount    int       `json:"rdsCount"`
+	EKSCount    int       `json:"eksCount"`
+	ELBCount    int       `json:"elbCount"`
+	NATCount    int       `json:"natCount"`
+	EIPCount    int       `json:"eipCount"`
+	SecretCount int       `json:"secretCount"`
+	TotalCost   CostValue `json:"totalCost"`
 }
 
 // CostResponse is the API response for cost data
@@ -124,6 +169,9 @@ type CostResponse struct {
 	RDSInstances  []RDSInstance    `json:"rdsInstances,omitempty"`
 	EKSClusters   []EKSCluster     `json:"eksClusters,omitempty"`
 	LoadBalancers []LoadBalancer   `json:"loadBalancers,omitempty"`
+	NATGateways   []NATGateway     `json:"natGateways,omitempty"`
+	ElasticIPs    []ElasticIP      `json:"elasticIps,omitempty"`
+	Secrets       []Secret         `json:"secrets,omitempty"`
 	Filters       AppliedFilters   `json:"filters"`
 }
 

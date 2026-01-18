@@ -105,6 +105,42 @@ export const costApi = {
     const response = await api.get<CostResponse>(`/costs/elb?${params.toString()}`);
     return response.data;
   },
+
+  async getNATGatewayCosts(filters: CostFilters = {}): Promise<CostResponse> {
+    const params = new URLSearchParams();
+    if (filters.accounts?.length) {
+      params.set('account', filters.accounts.join(','));
+    }
+    if (filters.regions?.length) {
+      params.set('region', filters.regions.join(','));
+    }
+    const response = await api.get<CostResponse>(`/costs/nat?${params.toString()}`);
+    return response.data;
+  },
+
+  async getElasticIPCosts(filters: CostFilters = {}): Promise<CostResponse> {
+    const params = new URLSearchParams();
+    if (filters.accounts?.length) {
+      params.set('account', filters.accounts.join(','));
+    }
+    if (filters.regions?.length) {
+      params.set('region', filters.regions.join(','));
+    }
+    const response = await api.get<CostResponse>(`/costs/eip?${params.toString()}`);
+    return response.data;
+  },
+
+  async getSecretsCosts(filters: CostFilters = {}): Promise<CostResponse> {
+    const params = new URLSearchParams();
+    if (filters.accounts?.length) {
+      params.set('account', filters.accounts.join(','));
+    }
+    if (filters.regions?.length) {
+      params.set('region', filters.regions.join(','));
+    }
+    const response = await api.get<CostResponse>(`/costs/secrets?${params.toString()}`);
+    return response.data;
+  },
 };
 
 export const configApi = {

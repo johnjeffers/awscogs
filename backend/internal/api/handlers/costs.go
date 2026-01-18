@@ -429,6 +429,147 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// GetNATGatewayCosts returns NAT Gateway costs
+func (h *CostsHandler) GetNATGatewayCosts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate NAT Gateway-only total cost
+	var natTotal types.CostValue
+	for _, nat := range response.NATGateways {
+		natTotal += nat.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		TotalCost:   natTotal,
+		Currency:    "USD",
+		NATGateways: response.NATGateways,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"nat"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// GetElasticIPCosts returns Elastic IP costs
+func (h *CostsHandler) GetElasticIPCosts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate EIP-only total cost
+	var eipTotal types.CostValue
+	for _, eip := range response.ElasticIPs {
+		eipTotal += eip.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp:  time.Now().UTC().Format(time.RFC3339),
+		TotalCost:  eipTotal,
+		Currency:   "USD",
+		ElasticIPs: response.ElasticIPs,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"eip"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// GetSecretsCosts returns Secrets Manager costs
+func (h *CostsHandler) GetSecretsCosts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate Secrets-only total cost
+	var secretsTotal types.CostValue
+	for _, secret := range response.Secrets {
+		secretsTotal += secret.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		TotalCost: secretsTotal,
+		Currency:  "USD",
+		Secrets:   response.Secrets,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"secrets"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 // getRegions returns regions to query - either from filter, discovery, or config
 func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]string, error) {
 	// If filter specified, use that

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance, EKSCluster, LoadBalancer } from '../../types/cost';
+import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance, EKSCluster, LoadBalancer, NATGateway, ElasticIP, Secret } from '../../types/cost';
 
 interface CostTableProps {
   accounts?: AccountSummary[];
@@ -10,6 +10,9 @@ interface CostTableProps {
   rds?: RDSInstance[];
   eks?: EKSCluster[];
   elb?: LoadBalancer[];
+  nat?: NATGateway[];
+  eip?: ElasticIP[];
+  secrets?: Secret[];
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -186,6 +189,9 @@ export const CostTable: React.FC<CostTableProps> = ({
   rds,
   eks,
   elb,
+  nat,
+  eip,
+  secrets,
 }) => {
   const [accountSort, setAccountSort] = useState<SortConfig>({ key: 'accountName', direction: 'asc' });
   const [regionSort, setRegionSort] = useState<SortConfig>({ key: 'region', direction: 'asc' });
@@ -195,6 +201,9 @@ export const CostTable: React.FC<CostTableProps> = ({
   const [rdsSort, setRdsSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
   const [eksSort, setEksSort] = useState<SortConfig>({ key: 'clusterName', direction: 'asc' });
   const [elbSort, setElbSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
+  const [natSort, setNatSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
+  const [eipSort, setEipSort] = useState<SortConfig>({ key: 'publicIp', direction: 'asc' });
+  const [secretsSort, setSecretsSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
 
   const [accountPage, setAccountPage] = useState(1);
   const [regionPage, setRegionPage] = useState(1);
@@ -204,6 +213,9 @@ export const CostTable: React.FC<CostTableProps> = ({
   const [rdsPage, setRdsPage] = useState(1);
   const [eksPage, setEksPage] = useState(1);
   const [elbPage, setElbPage] = useState(1);
+  const [natPage, setNatPage] = useState(1);
+  const [eipPage, setEipPage] = useState(1);
+  const [secretsPage, setSecretsPage] = useState(1);
 
   const [pageSize, setPageSize] = useState<PageSize>(10);
 
@@ -276,6 +288,21 @@ export const CostTable: React.FC<CostTableProps> = ({
     if (!elb) return [];
     return sortData(elb, elbSort);
   }, [elb, elbSort]);
+
+  const sortedNat = useMemo(() => {
+    if (!nat) return [];
+    return sortData(nat, natSort);
+  }, [nat, natSort]);
+
+  const sortedEip = useMemo(() => {
+    if (!eip) return [];
+    return sortData(eip, eipSort);
+  }, [eip, eipSort]);
+
+  const sortedSecrets = useMemo(() => {
+    if (!secrets) return [];
+    return sortData(secrets, secretsSort);
+  }, [secrets, secretsSort]);
 
   // Accounts table
   if (accounts && accounts.length > 0) {
@@ -670,6 +697,143 @@ export const CostTable: React.FC<CostTableProps> = ({
           </tbody>
         </table>
         <Pagination currentPage={elbPage} totalItems={sortedElb.length} pageSize={pageSize} onPageChange={setElbPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setElbPage(1))} />
+      </div>
+    );
+  }
+
+  // NAT Gateway table
+  if (nat && nat.length > 0) {
+    const paginatedNat = paginate(sortedNat, natPage, pageSize);
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <SortableHeader label="Account" sortKey="accountName" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <SortableHeader label="Region" sortKey="region" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <SortableHeader label="Name" sortKey="name" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <SortableHeader label="ID" sortKey="id" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <SortableHeader label="State" sortKey="state" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <SortableHeader label="Type" sortKey="type" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <SortableHeader label="VPC ID" sortKey="vpcId" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
+              <CostGroupHeader sortKey="hourlyCost" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} />
+            </tr>
+            <tr>
+              <CostSubHeaders />
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedNat.map((gateway) => (
+              <tr key={gateway.id}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.accountName || gateway.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.region}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{gateway.name || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.id}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    gateway.state === 'available' ? 'bg-green-100 text-green-800' :
+                    gateway.state === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                  }`}>
+                    {gateway.state}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.type}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.vpcId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(gateway.hourlyCost)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(gateway.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(gateway.hourlyCost), 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pagination currentPage={natPage} totalItems={sortedNat.length} pageSize={pageSize} onPageChange={setNatPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setNatPage(1))} />
+      </div>
+    );
+  }
+
+  // Elastic IP table
+  if (eip && eip.length > 0) {
+    const paginatedEip = paginate(sortedEip, eipPage, pageSize);
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <SortableHeader label="Account" sortKey="accountName" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <SortableHeader label="Region" sortKey="region" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <SortableHeader label="Name" sortKey="name" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <SortableHeader label="Public IP" sortKey="publicIp" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <SortableHeader label="Allocation ID" sortKey="allocationId" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <SortableHeader label="Associated" sortKey="isAssociated" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <SortableHeader label="Instance ID" sortKey="instanceId" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
+              <CostGroupHeader sortKey="hourlyCost" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} />
+            </tr>
+            <tr>
+              <CostSubHeaders />
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedEip.map((ip) => (
+              <tr key={ip.allocationId}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.accountName || ip.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.region}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{ip.name || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.publicIp}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.allocationId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                    ip.isAssociated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {ip.isAssociated ? 'Yes' : 'No'}
+                  </span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.instanceId || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(ip.hourlyCost)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(ip.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(ip.hourlyCost), 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pagination currentPage={eipPage} totalItems={sortedEip.length} pageSize={pageSize} onPageChange={setEipPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEipPage(1))} />
+      </div>
+    );
+  }
+
+  // Secrets table
+  if (secrets && secrets.length > 0) {
+    const paginatedSecrets = paginate(sortedSecrets, secretsPage, pageSize);
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <SortableHeader label="Account" sortKey="accountName" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
+              <SortableHeader label="Region" sortKey="region" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
+              <SortableHeader label="Name" sortKey="name" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
+              <SortableHeader label="Description" sortKey="description" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
+              <CostGroupHeader sortKey="hourlyCost" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} />
+            </tr>
+            <tr>
+              <CostSubHeaders />
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedSecrets.map((secret) => (
+              <tr key={secret.arn}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{secret.accountName || secret.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{secret.region}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{secret.name}</td>
+                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{secret.description || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(secret.hourlyCost)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(secret.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(secret.hourlyCost), 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pagination currentPage={secretsPage} totalItems={sortedSecrets.length} pageSize={pageSize} onPageChange={setSecretsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setSecretsPage(1))} />
       </div>
     );
   }

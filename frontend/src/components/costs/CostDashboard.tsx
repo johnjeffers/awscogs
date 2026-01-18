@@ -5,7 +5,7 @@ import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
 
-type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds' | 'eks' | 'elb';
+type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds' | 'eks' | 'elb' | 'nat' | 'eip' | 'secrets';
 
 const allTabs: { id: TabType; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
@@ -16,6 +16,9 @@ const allTabs: { id: TabType; label: string }[] = [
   { id: 'rds', label: 'RDS' },
   { id: 'eks', label: 'EKS' },
   { id: 'elb', label: 'ELB' },
+  { id: 'nat', label: 'NAT' },
+  { id: 'eip', label: 'EIP' },
+  { id: 'secrets', label: 'Secrets' },
 ];
 
 export const CostDashboard: React.FC = () => {
@@ -112,6 +115,15 @@ export const CostDashboard: React.FC = () => {
       elb: data.loadBalancers?.filter((lb) =>
         matchesFilter([lb.name, lb.type, lb.scheme, lb.state, lb.region, lb.accountName])
       ),
+      nat: data.natGateways?.filter((nat) =>
+        matchesFilter([nat.name, nat.id, nat.state, nat.type, nat.vpcId, nat.region, nat.accountName])
+      ),
+      eip: data.elasticIps?.filter((eip) =>
+        matchesFilter([eip.name, eip.publicIp, eip.allocationId, eip.instanceId, eip.region, eip.accountName])
+      ),
+      secrets: data.secrets?.filter((secret) =>
+        matchesFilter([secret.name, secret.description, secret.region, secret.accountName])
+      ),
     };
   }, [data, filter]);
 
@@ -126,6 +138,9 @@ export const CostDashboard: React.FC = () => {
       case 'rds': return { filtered: filteredData?.rds?.length || 0, total: data.rdsInstances?.length || 0 };
       case 'eks': return { filtered: filteredData?.eks?.length || 0, total: data.eksClusters?.length || 0 };
       case 'elb': return { filtered: filteredData?.elb?.length || 0, total: data.loadBalancers?.length || 0 };
+      case 'nat': return { filtered: filteredData?.nat?.length || 0, total: data.natGateways?.length || 0 };
+      case 'eip': return { filtered: filteredData?.eip?.length || 0, total: data.elasticIps?.length || 0 };
+      case 'secrets': return { filtered: filteredData?.secrets?.length || 0, total: data.secrets?.length || 0 };
     }
   };
 
@@ -142,6 +157,9 @@ export const CostDashboard: React.FC = () => {
   const rdsCount = data?.rdsInstances?.length || 0;
   const eksCount = data?.eksClusters?.length || 0;
   const elbCount = data?.loadBalancers?.length || 0;
+  const natCount = data?.natGateways?.length || 0;
+  const eipCount = data?.elasticIps?.length || 0;
+  const secretCount = data?.secrets?.length || 0;
 
   const exportToCSV = () => {
     if (!filteredData) return;
@@ -268,6 +286,48 @@ export const CostDashboard: React.FC = () => {
           monthlyCost(lb.hourlyCost).toFixed(2),
         ]);
         break;
+      case 'nat':
+        headers = ['Account', 'Region', 'Name', 'ID', 'State', 'Type', 'VPC ID', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.nat || []).map(nat => [
+          nat.accountName || nat.accountId,
+          nat.region,
+          nat.name,
+          nat.id,
+          nat.state,
+          nat.type,
+          nat.vpcId,
+          nat.hourlyCost.toFixed(4),
+          dailyCost(nat.hourlyCost).toFixed(2),
+          monthlyCost(nat.hourlyCost).toFixed(2),
+        ]);
+        break;
+      case 'eip':
+        headers = ['Account', 'Region', 'Name', 'Public IP', 'Allocation ID', 'Associated', 'Instance ID', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.eip || []).map(eip => [
+          eip.accountName || eip.accountId,
+          eip.region,
+          eip.name,
+          eip.publicIp,
+          eip.allocationId,
+          eip.isAssociated ? 'Yes' : 'No',
+          eip.instanceId || '',
+          eip.hourlyCost.toFixed(4),
+          dailyCost(eip.hourlyCost).toFixed(2),
+          monthlyCost(eip.hourlyCost).toFixed(2),
+        ]);
+        break;
+      case 'secrets':
+        headers = ['Account', 'Region', 'Name', 'Description', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.secrets || []).map(secret => [
+          secret.accountName || secret.accountId,
+          secret.region,
+          secret.name,
+          secret.description || '',
+          secret.hourlyCost.toFixed(4),
+          dailyCost(secret.hourlyCost).toFixed(2),
+          monthlyCost(secret.hourlyCost).toFixed(2),
+        ]);
+        break;
     }
 
     const escapeCSV = (value: string) => {
@@ -333,6 +393,9 @@ export const CostDashboard: React.FC = () => {
             rdsCount={rdsCount}
             eksCount={eksCount}
             elbCount={elbCount}
+            natCount={natCount}
+            eipCount={eipCount}
+            secretCount={secretCount}
             currency={data.currency}
           />
 
@@ -428,6 +491,15 @@ export const CostDashboard: React.FC = () => {
               )}
               {activeTab === 'elb' && (
                 <CostTable elb={filteredData?.elb} />
+              )}
+              {activeTab === 'nat' && (
+                <CostTable nat={filteredData?.nat} />
+              )}
+              {activeTab === 'eip' && (
+                <CostTable eip={filteredData?.eip} />
+              )}
+              {activeTab === 'secrets' && (
+                <CostTable secrets={filteredData?.secrets} />
               )}
             </div>
           </div>
