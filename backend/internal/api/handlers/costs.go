@@ -33,6 +33,7 @@ func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 	// Parse filters from query params
 	accountFilter := parseArrayParam(r, "account")
 	regionFilter := parseArrayParam(r, "region")
+	resourceFilter := parseArrayParam(r, "resource")
 
 	// Get regions (discover or use config)
 	regions, err := h.getRegions(ctx, regionFilter)
@@ -49,7 +50,7 @@ func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Discover resources
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, resourceFilter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -57,8 +58,9 @@ func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 
 	response.Timestamp = time.Now().UTC().Format(time.RFC3339)
 	response.Filters = types.AppliedFilters{
-		Accounts: accountFilter,
-		Regions:  regionFilter,
+		Accounts:      accountFilter,
+		Regions:       regionFilter,
+		ResourceTypes: resourceFilter,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -84,7 +86,7 @@ func (h *CostsHandler) GetAccountCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -125,7 +127,7 @@ func (h *CostsHandler) GetRegionCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, nil)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -166,7 +168,7 @@ func (h *CostsHandler) GetEC2Costs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"ec2"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -213,7 +215,7 @@ func (h *CostsHandler) GetEBSCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"ebs"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -260,7 +262,7 @@ func (h *CostsHandler) GetRDSCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"rds"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -307,7 +309,7 @@ func (h *CostsHandler) GetECSCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"ecs"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -354,7 +356,7 @@ func (h *CostsHandler) GetEKSCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"eks"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -401,7 +403,7 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"elb"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -448,7 +450,7 @@ func (h *CostsHandler) GetNATGatewayCosts(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"nat"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -495,7 +497,7 @@ func (h *CostsHandler) GetElasticIPCosts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"eip"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -542,7 +544,7 @@ func (h *CostsHandler) GetSecretsCosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	response, err := h.discovery.DiscoverResources(ctx, accounts, regions)
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"secrets"})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

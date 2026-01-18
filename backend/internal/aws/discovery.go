@@ -46,8 +46,22 @@ type Account struct {
 	RoleARN string
 }
 
+// shouldDiscover checks if a resource type should be discovered based on the filter
+func shouldDiscover(resourceTypes []string, resourceType string) bool {
+	if len(resourceTypes) == 0 {
+		return true // No filter means discover all
+	}
+	for _, rt := range resourceTypes {
+		if rt == resourceType {
+			return true
+		}
+	}
+	return false
+}
+
 // DiscoverResources discovers all resources across the specified accounts and regions
-func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string) (*types.CostResponse, error) {
+// resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets)
+func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string, resourceTypes []string) (*types.CostResponse, error) {
 	var (
 		allEC2     []types.EC2Instance
 		allEBS     []types.EBSVolume
@@ -102,85 +116,113 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 					}
 				}
 
+				var ec2Instances []types.EC2Instance
+				var ebsVolumes []types.EBSVolume
+				var ecsServices []types.ECSService
+				var rdsInstances []types.RDSInstance
+				var eksClusters []types.EKSCluster
+				var loadBalancers []types.LoadBalancer
+				var natGateways []types.NATGateway
+				var elasticIPs []types.ElasticIP
+				var secrets []types.Secret
+
 				// Discover EC2 instances
-				ec2Instances, err := d.discoverEC2(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover EC2 instances",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "ec2") {
+					ec2Instances, err = d.discoverEC2(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover EC2 instances",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover EBS volumes
-				ebsVolumes, err := d.discoverEBS(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover EBS volumes",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "ebs") {
+					ebsVolumes, err = d.discoverEBS(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover EBS volumes",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover ECS services
-				ecsServices, err := d.discoverECS(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover ECS services",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "ecs") {
+					ecsServices, err = d.discoverECS(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover ECS services",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover RDS instances
-				rdsInstances, err := d.discoverRDS(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover RDS instances",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "rds") {
+					rdsInstances, err = d.discoverRDS(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover RDS instances",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover EKS clusters
-				eksClusters, err := d.discoverEKS(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover EKS clusters",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "eks") {
+					eksClusters, err = d.discoverEKS(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover EKS clusters",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover Load Balancers
-				loadBalancers, err := d.discoverELB(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover load balancers",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "elb") {
+					loadBalancers, err = d.discoverELB(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover load balancers",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover NAT Gateways
-				natGateways, err := d.discoverNATGateways(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover NAT gateways",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "nat") {
+					natGateways, err = d.discoverNATGateways(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover NAT gateways",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover Elastic IPs
-				elasticIPs, err := d.discoverElasticIPs(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover Elastic IPs",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "eip") {
+					elasticIPs, err = d.discoverElasticIPs(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover Elastic IPs",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				// Discover Secrets
-				secrets, err := d.discoverSecrets(ctx, cfg, accountID, accountName, reg)
-				if err != nil {
-					d.logger.Error("failed to discover secrets",
-						"account", acc.Name,
-						"region", reg,
-						"error", err)
+				if shouldDiscover(resourceTypes, "secrets") {
+					secrets, err = d.discoverSecrets(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover secrets",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
 				}
 
 				mu.Lock()
