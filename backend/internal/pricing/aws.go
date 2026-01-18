@@ -18,19 +18,20 @@ import (
 
 // AWSProvider implements Provider using the AWS Price List API
 type AWSProvider struct {
-	client        *pricing.Client
-	ec2Cache      map[string]cogtypes.CostValue // key: "region:instanceType"
-	ebsCache      map[string]cogtypes.CostValue // key: "region:volumeType"
-	ecsCache      map[string]cogtypes.CostValue // key: "region:launchType"
-	rdsCache      map[string]cogtypes.CostValue // key: "region:instanceClass:engine:multiAZ"
-	eksCache      map[string]cogtypes.CostValue // key: "region"
-	elbCache      map[string]cogtypes.CostValue // key: "region:lbType"
-	natCache      map[string]cogtypes.CostValue // key: "region"
-	eipCache      map[string]cogtypes.CostValue // key: "region:associated"
-	secretCache   map[string]cogtypes.CostValue // key: "region"
-	cacheMu       sync.RWMutex
-	cacheExpiry   time.Time
-	cacheDuration time.Duration
+	client          *pricing.Client
+	ec2Cache        map[string]cogtypes.CostValue // key: "region:instanceType"
+	ebsCache        map[string]cogtypes.CostValue // key: "region:volumeType"
+	ecsCache        map[string]cogtypes.CostValue // key: "region:launchType"
+	rdsCache        map[string]cogtypes.CostValue // key: "region:instanceClass:engine:multiAZ"
+	eksCache        map[string]cogtypes.CostValue // key: "region"
+	elbCache        map[string]cogtypes.CostValue // key: "region:lbType"
+	natCache        map[string]cogtypes.CostValue // key: "region"
+	eipCache        map[string]cogtypes.CostValue // key: "region:associated"
+	secretCache     map[string]cogtypes.CostValue // key: "region"
+	publicIPv4Cache map[string]cogtypes.CostValue // key: "region"
+	cacheMu         sync.RWMutex
+	cacheExpiry     time.Time
+	cacheDuration   time.Duration
 }
 
 // NewAWSProvider creates a new AWS pricing provider
@@ -49,17 +50,18 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes int) (*AWSProvider
 	}
 
 	return &AWSProvider{
-		client:        client,
-		ec2Cache:      make(map[string]cogtypes.CostValue),
-		ebsCache:      make(map[string]cogtypes.CostValue),
-		ecsCache:      make(map[string]cogtypes.CostValue),
-		rdsCache:      make(map[string]cogtypes.CostValue),
-		eksCache:      make(map[string]cogtypes.CostValue),
-		elbCache:      make(map[string]cogtypes.CostValue),
-		natCache:      make(map[string]cogtypes.CostValue),
-		eipCache:      make(map[string]cogtypes.CostValue),
-		secretCache:   make(map[string]cogtypes.CostValue),
-		cacheDuration: time.Duration(cacheDurationMinutes) * time.Minute,
+		client:          client,
+		ec2Cache:        make(map[string]cogtypes.CostValue),
+		ebsCache:        make(map[string]cogtypes.CostValue),
+		ecsCache:        make(map[string]cogtypes.CostValue),
+		rdsCache:        make(map[string]cogtypes.CostValue),
+		eksCache:        make(map[string]cogtypes.CostValue),
+		elbCache:        make(map[string]cogtypes.CostValue),
+		natCache:        make(map[string]cogtypes.CostValue),
+		eipCache:        make(map[string]cogtypes.CostValue),
+		secretCache:     make(map[string]cogtypes.CostValue),
+		publicIPv4Cache: make(map[string]cogtypes.CostValue),
+		cacheDuration:   time.Duration(cacheDurationMinutes) * time.Minute,
 	}, nil
 }
 
@@ -457,6 +459,39 @@ func getSecretFallbackPrice() cogtypes.CostValue {
 	return cogtypes.CostValue(0.40 / 730.0)
 }
 
+// GetPublicIPv4Price returns the hourly price for a public IPv4 address
+// As of Feb 2024, AWS charges $0.005/hour for all public IPv4 addresses
+func (p *AWSProvider) GetPublicIPv4Price(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	cacheKey := region
+
+	// Check cache first
+	p.cacheMu.RLock()
+	if price, ok := p.publicIPv4Cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		p.cacheMu.RUnlock()
+		return price, nil
+	}
+	p.cacheMu.RUnlock()
+
+	// Public IPv4 address pricing: $0.005/hour (standard across all regions)
+	price := getPublicIPv4FallbackPrice()
+
+	// Update cache
+	p.cacheMu.Lock()
+	p.publicIPv4Cache[cacheKey] = price
+	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+		p.cacheExpiry = time.Now().Add(p.cacheDuration)
+	}
+	p.cacheMu.Unlock()
+
+	return price, nil
+}
+
+// getPublicIPv4FallbackPrice returns the hourly price for a public IPv4 address
+func getPublicIPv4FallbackPrice() cogtypes.CostValue {
+	// As of Feb 2024, AWS charges $0.005/hour for all public IPv4 addresses
+	return 0.005
+}
+
 // RefreshCache forces a refresh of the pricing cache
 func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.cacheMu.Lock()
@@ -469,6 +504,7 @@ func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.natCache = make(map[string]cogtypes.CostValue)
 	p.eipCache = make(map[string]cogtypes.CostValue)
 	p.secretCache = make(map[string]cogtypes.CostValue)
+	p.publicIPv4Cache = make(map[string]cogtypes.CostValue)
 	p.cacheExpiry = time.Time{}
 	p.cacheMu.Unlock()
 	return nil

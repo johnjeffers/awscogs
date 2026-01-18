@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance, EKSCluster, LoadBalancer, NATGateway, ElasticIP, Secret } from '../../types/cost';
+import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance, EKSCluster, LoadBalancer, NATGateway, ElasticIP, Secret, PublicIPv4 } from '../../types/cost';
 
 interface CostTableProps {
   accounts?: AccountSummary[];
@@ -13,6 +13,7 @@ interface CostTableProps {
   nat?: NATGateway[];
   eip?: ElasticIP[];
   secrets?: Secret[];
+  publicipv4?: PublicIPv4[];
 }
 
 type SortDirection = 'asc' | 'desc';
@@ -192,6 +193,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   nat,
   eip,
   secrets,
+  publicipv4,
 }) => {
   const [accountSort, setAccountSort] = useState<SortConfig>({ key: 'accountName', direction: 'asc' });
   const [regionSort, setRegionSort] = useState<SortConfig>({ key: 'region', direction: 'asc' });
@@ -204,6 +206,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   const [natSort, setNatSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
   const [eipSort, setEipSort] = useState<SortConfig>({ key: 'publicIp', direction: 'asc' });
   const [secretsSort, setSecretsSort] = useState<SortConfig>({ key: 'name', direction: 'asc' });
+  const [publicIpv4Sort, setPublicIpv4Sort] = useState<SortConfig>({ key: 'publicIp', direction: 'asc' });
 
   const [accountPage, setAccountPage] = useState(1);
   const [regionPage, setRegionPage] = useState(1);
@@ -216,6 +219,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   const [natPage, setNatPage] = useState(1);
   const [eipPage, setEipPage] = useState(1);
   const [secretsPage, setSecretsPage] = useState(1);
+  const [publicIpv4Page, setPublicIpv4Page] = useState(1);
 
   const [pageSize, setPageSize] = useState<PageSize>(10);
 
@@ -303,6 +307,11 @@ export const CostTable: React.FC<CostTableProps> = ({
     if (!secrets) return [];
     return sortData(secrets, secretsSort);
   }, [secrets, secretsSort]);
+
+  const sortedPublicIpv4 = useMemo(() => {
+    if (!publicipv4) return [];
+    return sortData(publicipv4, publicIpv4Sort);
+  }, [publicipv4, publicIpv4Sort]);
 
   // Accounts table
   if (accounts && accounts.length > 0) {
@@ -834,6 +843,45 @@ export const CostTable: React.FC<CostTableProps> = ({
           </tbody>
         </table>
         <Pagination currentPage={secretsPage} totalItems={sortedSecrets.length} pageSize={pageSize} onPageChange={setSecretsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setSecretsPage(1))} />
+      </div>
+    );
+  }
+
+  // Public IPv4 table
+  if (publicipv4 && publicipv4.length > 0) {
+    const paginatedPublicIpv4 = paginate(sortedPublicIpv4, publicIpv4Page, pageSize);
+    return (
+      <div className="overflow-x-auto">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <SortableHeader label="Account" sortKey="accountName" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
+              <SortableHeader label="Region" sortKey="region" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
+              <SortableHeader label="Public IP" sortKey="publicIp" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
+              <SortableHeader label="Instance ID" sortKey="instanceId" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
+              <SortableHeader label="Instance Name" sortKey="instanceName" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
+              <CostGroupHeader sortKey="hourlyCost" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} />
+            </tr>
+            <tr>
+              <CostSubHeaders />
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-gray-200">
+            {paginatedPublicIpv4.map((pip) => (
+              <tr key={`${pip.accountId}-${pip.region}-${pip.publicIp}`}>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.accountName || pip.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.region}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{pip.publicIp}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.instanceId || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.instanceName || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(pip.hourlyCost)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(pip.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(pip.hourlyCost), 2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <Pagination currentPage={publicIpv4Page} totalItems={sortedPublicIpv4.length} pageSize={pageSize} onPageChange={setPublicIpv4Page} onPageSizeChange={(size) => handlePageSizeChange(size, () => setPublicIpv4Page(1))} />
       </div>
     );
   }

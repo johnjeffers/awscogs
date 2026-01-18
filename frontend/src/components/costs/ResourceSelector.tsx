@@ -89,15 +89,29 @@ export const ResourceSelector: React.FC = () => {
       label: region,
     }));
 
+  const resourceLabels: Record<string, string> = {
+    ec2: 'EC2 Instances',
+    ebs: 'EBS Volumes',
+    ecs: 'ECS Clusters',
+    rds: 'RDS Instances',
+    eks: 'EKS Clusters',
+    elb: 'Load Balancers',
+    nat: 'NAT Gateways',
+    eip: 'Elastic IPs',
+    secrets: 'Secrets',
+    publicipv4: 'Public IPv4 Addrs',
+  };
+
   const resourceOptions = RESOURCE_TYPES.map((resource) => ({
     value: resource,
-    label: resource.toUpperCase(),
-  }));
+    label: resourceLabels[resource] || resource.toUpperCase(),
+  })).sort((a, b) => a.label.localeCompare(b.label));
 
   return (
     <div className="bg-white shadow rounded-lg p-6 mb-6">
       <h2 className="text-lg font-medium text-gray-900 mb-4">Select Resources to Query</h2>
-      <div className="grid grid-cols-1 md:grid-cols-[1.9fr_0.65fr_0.65fr_0.8fr] gap-6">
+      {/* fr vals below act as a percentage of total width. Like 40%/20%/20%/20% */}
+      <div className="grid grid-cols-1 md:grid-cols-[4fr_2fr_2fr_2fr] gap-4">
         {/* Account Selector */}
         <MultiSelectDropdown
           id="accounts"
@@ -133,7 +147,7 @@ export const ResourceSelector: React.FC = () => {
           <button
             onClick={handleLoadData}
             disabled={!canLoad || loading}
-            className="w-full px-6 py-3 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            className="w-full px-6 py-2.5 text-sm font-medium bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {loading ? (
               <>

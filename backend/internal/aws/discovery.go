@@ -60,21 +60,22 @@ func shouldDiscover(resourceTypes []string, resourceType string) bool {
 }
 
 // DiscoverResources discovers all resources across the specified accounts and regions
-// resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets)
+// resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets, publicipv4)
 func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string, resourceTypes []string) (*types.CostResponse, error) {
 	var (
-		allEC2     []types.EC2Instance
-		allEBS     []types.EBSVolume
-		allECS     []types.ECSService
-		allRDS     []types.RDSInstance
-		allEKS     []types.EKSCluster
-		allELB     []types.LoadBalancer
-		allNAT     []types.NATGateway
-		allEIP     []types.ElasticIP
-		allSecrets []types.Secret
-		mu         sync.Mutex
-		wg         sync.WaitGroup
-		totalCost  types.CostValue
+		allEC2        []types.EC2Instance
+		allEBS        []types.EBSVolume
+		allECS        []types.ECSService
+		allRDS        []types.RDSInstance
+		allEKS        []types.EKSCluster
+		allELB        []types.LoadBalancer
+		allNAT        []types.NATGateway
+		allEIP        []types.ElasticIP
+		allSecrets    []types.Secret
+		allPublicIPv4 []types.PublicIPv4
+		mu            sync.Mutex
+		wg            sync.WaitGroup
+		totalCost     types.CostValue
 	)
 
 	// If no accounts specified, use default credentials
@@ -125,6 +126,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 				var natGateways []types.NATGateway
 				var elasticIPs []types.ElasticIP
 				var secrets []types.Secret
+				var publicIPv4s []types.PublicIPv4
 
 				// Discover EC2 instances
 				if shouldDiscover(resourceTypes, "ec2") {
@@ -225,6 +227,17 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 					}
 				}
 
+				// Discover Public IPv4 addresses
+				if shouldDiscover(resourceTypes, "publicipv4") {
+					publicIPv4s, err = d.discoverPublicIPv4s(ctx, cfg, accountID, accountName, reg)
+					if err != nil {
+						d.logger.Error("failed to discover public IPv4 addresses",
+							"account", acc.Name,
+							"region", reg,
+							"error", err)
+					}
+				}
+
 				mu.Lock()
 				allEC2 = append(allEC2, ec2Instances...)
 				allEBS = append(allEBS, ebsVolumes...)
@@ -235,6 +248,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 				allNAT = append(allNAT, natGateways...)
 				allEIP = append(allEIP, elasticIPs...)
 				allSecrets = append(allSecrets, secrets...)
+				allPublicIPv4 = append(allPublicIPv4, publicIPv4s...)
 				mu.Unlock()
 			}(account, region)
 		}
@@ -270,10 +284,13 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 	for _, secret := range allSecrets {
 		totalCost += secret.HourlyCost
 	}
+	for _, pip := range allPublicIPv4 {
+		totalCost += pip.HourlyCost
+	}
 
 	// Build account and region summaries
-	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets)
-	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets)
+	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4)
+	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4)
 
 	return &types.CostResponse{
 		TotalCost:     totalCost,
@@ -289,6 +306,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		NATGateways:   allNAT,
 		ElasticIPs:    allEIP,
 		Secrets:       allSecrets,
+		PublicIPv4s:   allPublicIPv4,
 	}, nil
 }
 
@@ -1117,6 +1135,85 @@ func (d *Discovery) discoverSecrets(ctx context.Context, cfg aws.Config, account
 	return secrets, nil
 }
 
+// discoverPublicIPv4s discovers public IPv4 addresses on EC2 instances in the specified region
+// These are auto-assigned public IPs, not Elastic IPs (which are tracked separately)
+func (d *Discovery) discoverPublicIPv4s(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.PublicIPv4, error) {
+	client := ec2.NewFromConfig(cfg)
+
+	var publicIPs []types.PublicIPv4
+	paginator := ec2.NewDescribeInstancesPaginator(client, &ec2.DescribeInstancesInput{})
+
+	// First, get a set of Elastic IPs to exclude them
+	eipOutput, err := client.DescribeAddresses(ctx, &ec2.DescribeAddressesInput{})
+	elasticIPs := make(map[string]bool)
+	if err == nil {
+		for _, addr := range eipOutput.Addresses {
+			if addr.PublicIp != nil {
+				elasticIPs[*addr.PublicIp] = true
+			}
+		}
+	}
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("describing instances for public IPs: %w", err)
+		}
+
+		for _, reservation := range page.Reservations {
+			for _, inst := range reservation.Instances {
+				// Skip non-running instances (no public IP charge when stopped)
+				if inst.State == nil || inst.State.Name != ec2types.InstanceStateNameRunning {
+					continue
+				}
+
+				// Skip instances without public IP
+				if inst.PublicIpAddress == nil || *inst.PublicIpAddress == "" {
+					continue
+				}
+
+				publicIP := *inst.PublicIpAddress
+
+				// Skip Elastic IPs (tracked separately)
+				if elasticIPs[publicIP] {
+					continue
+				}
+
+				instanceID := ""
+				if inst.InstanceId != nil {
+					instanceID = *inst.InstanceId
+				}
+
+				instanceName := getEC2Name(inst.Tags)
+
+				// Get pricing
+				price, err := d.pricingProvider.GetPublicIPv4Price(ctx, region)
+				var hourlyCost types.CostValue
+				if err != nil {
+					d.logger.Warn("failed to get public IPv4 price",
+						"publicIp", publicIP,
+						"region", region,
+						"error", err)
+				} else {
+					hourlyCost = price
+				}
+
+				publicIPs = append(publicIPs, types.PublicIPv4{
+					AccountID:    accountID,
+					AccountName:  accountName,
+					Region:       region,
+					PublicIP:     publicIP,
+					InstanceID:   instanceID,
+					InstanceName: instanceName,
+					HourlyCost:   hourlyCost,
+				})
+			}
+		}
+	}
+
+	return publicIPs, nil
+}
+
 // getEC2Name extracts the Name tag from EC2 instance tags
 func getEC2Name(tags []ec2types.Tag) string {
 	for _, tag := range tags {
@@ -1169,7 +1266,7 @@ func isRDSNonBillableState(state string) bool {
 }
 
 // buildAccountSummaries builds account-level cost summaries
-func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret) []types.AccountSummary {
+func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret, publicIPv4 []types.PublicIPv4) []types.AccountSummary {
 	summaries := make(map[string]*types.AccountSummary)
 
 	for _, inst := range ec2 {
@@ -1280,6 +1377,18 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 		summaries[key].TotalCost += secret.HourlyCost
 	}
 
+	for _, pip := range publicIPv4 {
+		key := pip.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   pip.AccountID,
+				AccountName: pip.AccountName,
+			}
+		}
+		summaries[key].PublicIPv4Count++
+		summaries[key].TotalCost += pip.HourlyCost
+	}
+
 	result := make([]types.AccountSummary, 0, len(summaries))
 	for _, s := range summaries {
 		result = append(result, *s)
@@ -1288,7 +1397,7 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 }
 
 // buildRegionSummaries builds region-level cost summaries
-func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret) []types.RegionSummary {
+func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret, publicIPv4 []types.PublicIPv4) []types.RegionSummary {
 	summaries := make(map[string]*types.RegionSummary)
 
 	for _, inst := range ec2 {
@@ -1370,6 +1479,15 @@ func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EB
 		}
 		summaries[key].SecretCount++
 		summaries[key].TotalCost += secret.HourlyCost
+	}
+
+	for _, pip := range publicIPv4 {
+		key := pip.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].PublicIPv4Count++
+		summaries[key].TotalCost += pip.HourlyCost
 	}
 
 	result := make([]types.RegionSummary, 0, len(summaries))

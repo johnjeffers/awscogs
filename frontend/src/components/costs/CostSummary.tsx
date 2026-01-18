@@ -11,6 +11,7 @@ interface CostSummaryProps {
   natCount: number;
   eipCount: number;
   secretCount: number;
+  publicIpv4Count: number;
   currency: string;
 }
 
@@ -25,6 +26,7 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
   natCount,
   eipCount,
   secretCount,
+  publicIpv4Count,
   currency,
 }) => {
   const formatCost = (cost: number, decimals: number = 4) => {
@@ -85,10 +87,10 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
               Resources
             </dt>
             <dd className="mt-1 text-2xl font-semibold text-gray-900">
-              {ec2Count + ebsCount + ecsCount + rdsCount + eksCount + elbCount + natCount + eipCount + secretCount}
+              {ec2Count + ebsCount + ecsCount + rdsCount + eksCount + elbCount + natCount + eipCount + secretCount + publicIpv4Count}
             </dd>
             <dd className="text-xs text-gray-500">
-              {ec2Count} EC2 / {ebsCount} EBS / {ecsCount} ECS / {rdsCount} RDS / {eksCount} EKS / {elbCount} ELB / {natCount} NAT / {eipCount} EIP / {secretCount} Secrets
+              {ec2Count} EC2 / {ebsCount} EBS / {ecsCount} ECS / {rdsCount} RDS / {eksCount} EKS / {elbCount} ELB / {natCount} NAT / {eipCount} EIP / {secretCount} Secrets / {publicIpv4Count} Public IPv4
             </dd>
           </div>
         </div>

@@ -36,6 +36,9 @@ type Provider interface {
 	// GetSecretPrice returns the hourly price for a Secrets Manager secret
 	GetSecretPrice(ctx context.Context, region string) (types.CostValue, error)
 
+	// GetPublicIPv4Price returns the hourly price for a public IPv4 address
+	GetPublicIPv4Price(ctx context.Context, region string) (types.CostValue, error)
+
 	// RefreshCache forces a refresh of the pricing cache
 	RefreshCache(ctx context.Context) error
 }

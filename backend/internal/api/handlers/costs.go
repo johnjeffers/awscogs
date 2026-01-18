@@ -572,6 +572,53 @@ func (h *CostsHandler) GetSecretsCosts(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+// GetPublicIPv4Costs returns Public IPv4 address costs
+func (h *CostsHandler) GetPublicIPv4Costs(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"publicipv4"})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate Public IPv4-only total cost
+	var publicIPv4Total types.CostValue
+	for _, pip := range response.PublicIPv4s {
+		publicIPv4Total += pip.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp:   time.Now().UTC().Format(time.RFC3339),
+		TotalCost:   publicIPv4Total,
+		Currency:    "USD",
+		PublicIPv4s: response.PublicIPv4s,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"publicipv4"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 // getRegions returns regions to query - either from filter, discovery, or config
 func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]string, error) {
 	// If filter specified, use that

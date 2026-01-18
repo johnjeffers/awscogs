@@ -5,7 +5,7 @@ import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
 
-type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds' | 'eks' | 'elb' | 'nat' | 'eip' | 'secrets';
+type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds' | 'eks' | 'elb' | 'nat' | 'eip' | 'secrets' | 'publicipv4';
 
 const allTabs: { id: TabType; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
@@ -19,6 +19,7 @@ const allTabs: { id: TabType; label: string }[] = [
   { id: 'nat', label: 'NAT' },
   { id: 'eip', label: 'EIP' },
   { id: 'secrets', label: 'Secrets' },
+  { id: 'publicipv4', label: 'Public IPv4' },
 ];
 
 export const CostDashboard: React.FC = () => {
@@ -124,6 +125,9 @@ export const CostDashboard: React.FC = () => {
       secrets: data.secrets?.filter((secret) =>
         matchesFilter([secret.name, secret.description, secret.region, secret.accountName])
       ),
+      publicipv4: data.publicIpv4s?.filter((pip) =>
+        matchesFilter([pip.publicIp, pip.instanceId, pip.instanceName, pip.region, pip.accountName])
+      ),
     };
   }, [data, filter]);
 
@@ -141,6 +145,7 @@ export const CostDashboard: React.FC = () => {
       case 'nat': return { filtered: filteredData?.nat?.length || 0, total: data.natGateways?.length || 0 };
       case 'eip': return { filtered: filteredData?.eip?.length || 0, total: data.elasticIps?.length || 0 };
       case 'secrets': return { filtered: filteredData?.secrets?.length || 0, total: data.secrets?.length || 0 };
+      case 'publicipv4': return { filtered: filteredData?.publicipv4?.length || 0, total: data.publicIpv4s?.length || 0 };
     }
   };
 
@@ -160,6 +165,7 @@ export const CostDashboard: React.FC = () => {
   const natCount = data?.natGateways?.length || 0;
   const eipCount = data?.elasticIps?.length || 0;
   const secretCount = data?.secrets?.length || 0;
+  const publicIpv4Count = data?.publicIpv4s?.length || 0;
 
   const exportToCSV = () => {
     if (!filteredData) return;
@@ -328,6 +334,19 @@ export const CostDashboard: React.FC = () => {
           monthlyCost(secret.hourlyCost).toFixed(2),
         ]);
         break;
+      case 'publicipv4':
+        headers = ['Account', 'Region', 'Public IP', 'Instance ID', 'Instance Name', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.publicipv4 || []).map(pip => [
+          pip.accountName || pip.accountId,
+          pip.region,
+          pip.publicIp,
+          pip.instanceId || '',
+          pip.instanceName || '',
+          pip.hourlyCost.toFixed(4),
+          dailyCost(pip.hourlyCost).toFixed(2),
+          monthlyCost(pip.hourlyCost).toFixed(2),
+        ]);
+        break;
     }
 
     const escapeCSV = (value: string) => {
@@ -396,6 +415,7 @@ export const CostDashboard: React.FC = () => {
             natCount={natCount}
             eipCount={eipCount}
             secretCount={secretCount}
+            publicIpv4Count={publicIpv4Count}
             currency={data.currency}
           />
 
@@ -500,6 +520,9 @@ export const CostDashboard: React.FC = () => {
               )}
               {activeTab === 'secrets' && (
                 <CostTable secrets={filteredData?.secrets} />
+              )}
+              {activeTab === 'publicipv4' && (
+                <CostTable publicipv4={filteredData?.publicipv4} />
               )}
             </div>
           </div>

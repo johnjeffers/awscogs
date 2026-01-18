@@ -125,35 +125,49 @@ type Secret struct {
 	HourlyCost  CostValue `json:"hourlyCost"`
 }
 
+// PublicIPv4 represents a public IPv4 address with its cost
+// This tracks auto-assigned public IPs on EC2 instances (not Elastic IPs)
+type PublicIPv4 struct {
+	AccountID    string    `json:"accountId"`
+	AccountName  string    `json:"accountName"`
+	Region       string    `json:"region"`
+	PublicIP     string    `json:"publicIp"`
+	InstanceID   string    `json:"instanceId"`
+	InstanceName string    `json:"instanceName"`
+	HourlyCost   CostValue `json:"hourlyCost"`
+}
+
 // AccountSummary represents cost summary for an AWS account
 type AccountSummary struct {
-	AccountID   string    `json:"accountId"`
-	AccountName string    `json:"accountName"`
-	EC2Count    int       `json:"ec2Count"`
-	EBSCount    int       `json:"ebsCount"`
-	ECSCount    int       `json:"ecsCount"`
-	RDSCount    int       `json:"rdsCount"`
-	EKSCount    int       `json:"eksCount"`
-	ELBCount    int       `json:"elbCount"`
-	NATCount    int       `json:"natCount"`
-	EIPCount    int       `json:"eipCount"`
-	SecretCount int       `json:"secretCount"`
-	TotalCost   CostValue `json:"totalCost"`
+	AccountID      string    `json:"accountId"`
+	AccountName    string    `json:"accountName"`
+	EC2Count       int       `json:"ec2Count"`
+	EBSCount       int       `json:"ebsCount"`
+	ECSCount       int       `json:"ecsCount"`
+	RDSCount       int       `json:"rdsCount"`
+	EKSCount       int       `json:"eksCount"`
+	ELBCount       int       `json:"elbCount"`
+	NATCount       int       `json:"natCount"`
+	EIPCount       int       `json:"eipCount"`
+	SecretCount    int       `json:"secretCount"`
+	PublicIPv4Count int      `json:"publicIpv4Count"`
+	TotalCost      CostValue `json:"totalCost"`
 }
 
 // RegionSummary represents cost summary for a region
 type RegionSummary struct {
-	Region      string    `json:"region"`
-	EC2Count    int       `json:"ec2Count"`
-	EBSCount    int       `json:"ebsCount"`
-	ECSCount    int       `json:"ecsCount"`
-	RDSCount    int       `json:"rdsCount"`
-	EKSCount    int       `json:"eksCount"`
-	ELBCount    int       `json:"elbCount"`
-	NATCount    int       `json:"natCount"`
-	EIPCount    int       `json:"eipCount"`
-	SecretCount int       `json:"secretCount"`
-	TotalCost   CostValue `json:"totalCost"`
+	Region          string    `json:"region"`
+	EC2Count        int       `json:"ec2Count"`
+	EBSCount        int       `json:"ebsCount"`
+	ECSCount        int       `json:"ecsCount"`
+	RDSCount        int       `json:"rdsCount"`
+	EKSCount        int       `json:"eksCount"`
+	ELBCount        int       `json:"elbCount"`
+	NATCount        int       `json:"natCount"`
+	EIPCount        int       `json:"eipCount"`
+	SecretCount     int       `json:"secretCount"`
+	PublicIPv4Count int       `json:"publicIpv4Count"`
+	TotalCost       CostValue `json:"totalCost"`
 }
 
 // CostResponse is the API response for cost data
@@ -172,6 +186,7 @@ type CostResponse struct {
 	NATGateways   []NATGateway     `json:"natGateways,omitempty"`
 	ElasticIPs    []ElasticIP      `json:"elasticIps,omitempty"`
 	Secrets       []Secret         `json:"secrets,omitempty"`
+	PublicIPv4s   []PublicIPv4     `json:"publicIpv4s,omitempty"`
 	Filters       AppliedFilters   `json:"filters"`
 }
 

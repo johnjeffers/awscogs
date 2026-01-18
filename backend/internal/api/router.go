@@ -53,6 +53,7 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 		r.Get("/costs/nat", costsHandler.GetNATGatewayCosts)
 		r.Get("/costs/eip", costsHandler.GetElasticIPCosts)
 		r.Get("/costs/secrets", costsHandler.GetSecretsCosts)
+		r.Get("/costs/publicipv4", costsHandler.GetPublicIPv4Costs)
 	})
 
 	return r

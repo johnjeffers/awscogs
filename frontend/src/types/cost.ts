@@ -13,6 +13,7 @@ export interface CostResponse {
   natGateways?: NATGateway[];
   elasticIps?: ElasticIP[];
   secrets?: Secret[];
+  publicIpv4s?: PublicIPv4[];
   filters: AppliedFilters;
 }
 
@@ -28,6 +29,7 @@ export interface AccountSummary {
   natCount: number;
   eipCount: number;
   secretCount: number;
+  publicIpv4Count: number;
   totalCost: number;
 }
 
@@ -42,6 +44,7 @@ export interface RegionSummary {
   natCount: number;
   eipCount: number;
   secretCount: number;
+  publicIpv4Count: number;
   totalCost: number;
 }
 
@@ -158,6 +161,16 @@ export interface Secret {
   hourlyCost: number;
 }
 
+export interface PublicIPv4 {
+  accountId: string;
+  accountName: string;
+  region: string;
+  publicIp: string;
+  instanceId: string;
+  instanceName: string;
+  hourlyCost: number;
+}
+
 export interface AppliedFilters {
   accounts?: string[];
   regions?: string[];
@@ -170,7 +183,7 @@ export interface CostFilters {
   resources?: string[];
 }
 
-export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb', 'nat', 'eip', 'secrets'] as const;
+export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb', 'nat', 'eip', 'secrets', 'publicipv4'] as const;
 export type ResourceType = typeof RESOURCE_TYPES[number];
 
 export interface ConfigResponse {
