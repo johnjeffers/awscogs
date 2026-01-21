@@ -8,11 +8,14 @@ RUN npm run build
 
 # Build backend
 FROM golang:1.25-alpine AS backend-builder
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
 WORKDIR /app
 COPY backend/ ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./backend/internal/api/dist
 WORKDIR /app/backend
-RUN go build -o /awscogs ./cmd/awscogs
+RUN go build -ldflags="-X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.Version=${VERSION} -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.GitCommit=${GIT_COMMIT} -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.BuildTime=${BUILD_TIME}" -o /awscogs ./cmd/awscogs
 
 # Runtime image
 FROM alpine:3

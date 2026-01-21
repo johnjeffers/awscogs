@@ -186,7 +186,14 @@ export interface CostFilters {
 export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb', 'nat', 'eip', 'secrets', 'publicipv4'] as const;
 export type ResourceType = typeof RESOURCE_TYPES[number];
 
+export interface VersionInfo {
+  version: string;
+  gitCommit: string;
+  buildTime: string;
+}
+
 export interface ConfigResponse {
   accounts: { id: string; name: string }[];
   regions: string[];
+  version: VersionInfo;
 }

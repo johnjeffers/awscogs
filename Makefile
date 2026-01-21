@@ -1,5 +1,15 @@
 .PHONY: dev backend frontend build clean install vet update docker-build
 
+# Version info (auto-detected from git, can be overridden)
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
+BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Linker flags for version injection
+LDFLAGS = -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.Version=$(VERSION) \
+          -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.GitCommit=$(GIT_COMMIT) \
+          -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.BuildTime=$(BUILD_TIME)
+
 # Run both backend and frontend for local development
 dev:
 	@trap 'kill 0' EXIT; \
@@ -30,7 +40,7 @@ build:
 	cd frontend && npm run build
 	rm -rf backend/internal/api/dist
 	cp -r frontend/dist backend/internal/api/dist
-	cd backend && go build -o bin/awscogs ./cmd/awscogs
+	cd backend && go build -ldflags='$(LDFLAGS)' -o bin/awscogs ./cmd/awscogs
 
 # Run go vet and staticcheck on backend
 vet:
@@ -47,4 +57,10 @@ clean:
 
 # Build Docker image
 docker-build:
-	docker build -t awscogs .
+	docker build \
+		--build-arg VERSION=$(VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		-t awscogs:$(VERSION) \
+		-t awscogs:latest \
+		.

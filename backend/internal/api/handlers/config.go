@@ -6,6 +6,7 @@ import (
 
 	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/aws"
 	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/config"
+	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version"
 )
 
 // ConfigHandler handles configuration requests
@@ -22,10 +23,18 @@ func NewConfigHandler(cfg *config.Config, discovery *aws.Discovery) *ConfigHandl
 	}
 }
 
+// VersionInfo provides application version information
+type VersionInfo struct {
+	Version   string `json:"version"`
+	GitCommit string `json:"gitCommit"`
+	BuildTime string `json:"buildTime"`
+}
+
 // ConfigResponse is the response for configuration
 type ConfigResponse struct {
 	Accounts []AccountInfo `json:"accounts"`
 	Regions  []string      `json:"regions"`
+	Version  VersionInfo   `json:"version"`
 }
 
 // AccountInfo provides account information
@@ -80,6 +89,11 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	response := ConfigResponse{
 		Accounts: accounts,
 		Regions:  regions,
+		Version: VersionInfo{
+			Version:   version.Version,
+			GitCommit: version.GitCommit,
+			BuildTime: version.BuildTime,
+		},
 	}
 
 	w.Header().Set("Content-Type", "application/json")
