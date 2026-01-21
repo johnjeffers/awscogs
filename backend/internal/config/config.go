@@ -14,6 +14,7 @@ type Config struct {
 	Server  ServerConfig  `yaml:"server"`
 	AWS     AWSConfig     `yaml:"aws"`
 	Pricing PricingConfig `yaml:"pricing"`
+	Cache   CacheConfig   `yaml:"cache"`
 	Log     LogConfig     `yaml:"log"`
 }
 
@@ -43,6 +44,12 @@ type PricingConfig struct {
 	RateLimitPerSecond     int `yaml:"rateLimitPerSecond"` // Max pricing API calls per second (0 = unlimited)
 }
 
+// CacheConfig holds cache settings
+type CacheConfig struct {
+	ResourceTTLMinutes int `yaml:"resourceTTLMinutes"` // TTL for resource discovery cache
+	AccountTTLMinutes  int `yaml:"accountTTLMinutes"`  // TTL for account/region discovery cache
+}
+
 // LogConfig holds logging settings
 type LogConfig struct {
 	Level string `yaml:"level"`
@@ -62,6 +69,10 @@ func DefaultConfig() *Config {
 		Pricing: PricingConfig{
 			RefreshIntervalMinutes: 60,
 			RateLimitPerSecond:     5, // Conservative default to avoid AWS throttling
+		},
+		Cache: CacheConfig{
+			ResourceTTLMinutes: 5,  // Resource discovery cache TTL
+			AccountTTLMinutes:  60, // Account/region discovery cache TTL
 		},
 		Log: LogConfig{
 			Level: "info",
@@ -133,6 +144,18 @@ func (c *Config) loadFromEnv() {
 	if rateLimit := os.Getenv("AWSCOGS_PRICING_RATE_LIMIT"); rateLimit != "" {
 		if r, err := strconv.Atoi(rateLimit); err == nil {
 			c.Pricing.RateLimitPerSecond = r
+		}
+	}
+
+	if resourceTTL := os.Getenv("AWSCOGS_CACHE_RESOURCE_TTL_MINUTES"); resourceTTL != "" {
+		if t, err := strconv.Atoi(resourceTTL); err == nil {
+			c.Cache.ResourceTTLMinutes = t
+		}
+	}
+
+	if accountTTL := os.Getenv("AWSCOGS_CACHE_ACCOUNT_TTL_MINUTES"); accountTTL != "" {
+		if t, err := strconv.Atoi(accountTTL); err == nil {
+			c.Cache.AccountTTLMinutes = t
 		}
 	}
 }

@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -25,17 +28,42 @@ import (
 	"github.com/johnjeffers/awscogs/backend/internal/types"
 )
 
+// cacheEntry holds a cached value with expiration
+type cacheEntry[T any] struct {
+	value     T
+	expiresAt time.Time
+}
+
 // Discovery handles AWS resource discovery across accounts and regions
 type Discovery struct {
 	pricingProvider pricing.Provider
 	logger          *slog.Logger
+
+	// Cache settings
+	resourceTTL time.Duration
+	accountTTL  time.Duration
+
+	// Resource discovery cache
+	resourceCache   map[string]cacheEntry[*types.CostResponse]
+	resourceCacheMu sync.RWMutex
+
+	// Account discovery cache
+	accountCache   *cacheEntry[[]Account]
+	accountCacheMu sync.RWMutex
+
+	// Region discovery cache
+	regionCache   *cacheEntry[[]string]
+	regionCacheMu sync.RWMutex
 }
 
 // NewDiscovery creates a new AWS resource discovery service
-func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger) *Discovery {
+func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger, resourceTTLMinutes, accountTTLMinutes int) *Discovery {
 	return &Discovery{
 		pricingProvider: pricingProvider,
 		logger:          logger,
+		resourceTTL:     time.Duration(resourceTTLMinutes) * time.Minute,
+		accountTTL:      time.Duration(accountTTLMinutes) * time.Minute,
+		resourceCache:   make(map[string]cacheEntry[*types.CostResponse]),
 	}
 }
 
@@ -44,6 +72,20 @@ type Account struct {
 	ID      string
 	Name    string
 	RoleARN string
+}
+
+// buildCacheKey creates a cache key from accounts, regions, and resource types
+func buildCacheKey(accounts []Account, regions []string, resourceTypes []string) string {
+	// Sort inputs for consistent keys
+	accountIDs := make([]string, len(accounts))
+	for i, a := range accounts {
+		accountIDs[i] = a.ID
+	}
+	sort.Strings(accountIDs)
+	sort.Strings(regions)
+	sort.Strings(resourceTypes)
+
+	return strings.Join(accountIDs, ",") + "|" + strings.Join(regions, ",") + "|" + strings.Join(resourceTypes, ",")
 }
 
 // shouldDiscover checks if a resource type should be discovered based on the filter
@@ -62,6 +104,17 @@ func shouldDiscover(resourceTypes []string, resourceType string) bool {
 // DiscoverResources discovers all resources across the specified accounts and regions
 // resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets, publicipv4)
 func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string, resourceTypes []string) (*types.CostResponse, error) {
+	// Check cache first
+	cacheKey := buildCacheKey(accounts, regions, resourceTypes)
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("returning cached resource discovery result", "cacheKey", cacheKey)
+		return entry.value, nil
+	}
+	d.resourceCacheMu.RUnlock()
+
 	var (
 		allEC2        []types.EC2Instance
 		allEBS        []types.EBSVolume
@@ -292,7 +345,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4)
 	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4)
 
-	return &types.CostResponse{
+	result := &types.CostResponse{
 		TotalCost:     totalCost,
 		Currency:      "USD",
 		Accounts:      accountSummaries,
@@ -307,7 +360,18 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		ElasticIPs:    allEIP,
 		Secrets:       allSecrets,
 		PublicIPv4s:   allPublicIPv4,
-	}, nil
+	}
+
+	// Cache the result
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[*types.CostResponse]{
+		value:     result,
+		expiresAt: time.Now().Add(d.resourceTTL),
+	}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached resource discovery result", "cacheKey", cacheKey, "ttl", d.resourceTTL)
+
+	return result, nil
 }
 
 // getConfigForAccount returns an AWS config for the specified account
@@ -353,6 +417,16 @@ func (d *Discovery) getAccountAlias(ctx context.Context, cfg aws.Config) string 
 
 // DiscoverRegions returns all enabled regions for the current account
 func (d *Discovery) DiscoverRegions(ctx context.Context) ([]string, error) {
+	// Check cache first
+	d.regionCacheMu.RLock()
+	if d.regionCache != nil && time.Now().Before(d.regionCache.expiresAt) {
+		regions := d.regionCache.value
+		d.regionCacheMu.RUnlock()
+		d.logger.Debug("returning cached regions", "count", len(regions))
+		return regions, nil
+	}
+	d.regionCacheMu.RUnlock()
+
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
 		return nil, fmt.Errorf("loading default config: %w", err)
@@ -373,12 +447,30 @@ func (d *Discovery) DiscoverRegions(ctx context.Context) ([]string, error) {
 		}
 	}
 
+	// Cache the result
+	d.regionCacheMu.Lock()
+	d.regionCache = &cacheEntry[[]string]{
+		value:     regions,
+		expiresAt: time.Now().Add(d.accountTTL),
+	}
+	d.regionCacheMu.Unlock()
+
 	d.logger.Info("discovered regions", "count", len(regions))
 	return regions, nil
 }
 
 // DiscoverAccounts returns all accounts from AWS Organizations with the specified assume role
 func (d *Discovery) DiscoverAccounts(ctx context.Context, assumeRoleName string) ([]Account, error) {
+	// Check cache first
+	d.accountCacheMu.RLock()
+	if d.accountCache != nil && time.Now().Before(d.accountCache.expiresAt) {
+		accounts := d.accountCache.value
+		d.accountCacheMu.RUnlock()
+		d.logger.Debug("returning cached accounts", "count", len(accounts))
+		return accounts, nil
+	}
+	d.accountCacheMu.RUnlock()
+
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
 	if err != nil {
 		return nil, fmt.Errorf("loading default config: %w", err)
@@ -423,6 +515,14 @@ func (d *Discovery) DiscoverAccounts(ctx context.Context, assumeRoleName string)
 			accounts = append(accounts, account)
 		}
 	}
+
+	// Cache the result
+	d.accountCacheMu.Lock()
+	d.accountCache = &cacheEntry[[]Account]{
+		value:     accounts,
+		expiresAt: time.Now().Add(d.accountTTL),
+	}
+	d.accountCacheMu.Unlock()
 
 	d.logger.Info("discovered accounts from organizations", "count", len(accounts))
 	return accounts, nil

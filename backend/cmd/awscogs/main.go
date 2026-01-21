@@ -42,7 +42,8 @@ func main() {
 	logger.Info("pricing provider initialized", "rateLimitPerSecond", cfg.Pricing.RateLimitPerSecond)
 
 	// Create discovery service
-	discovery := aws.NewDiscovery(pricingProvider, logger)
+	discovery := aws.NewDiscovery(pricingProvider, logger, cfg.Cache.ResourceTTLMinutes, cfg.Cache.AccountTTLMinutes)
+	logger.Info("discovery service initialized", "resourceCacheTTL", cfg.Cache.ResourceTTLMinutes, "accountCacheTTL", cfg.Cache.AccountTTLMinutes)
 
 	// Create and start server
 	server := api.NewServer(cfg, discovery, logger)
