@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/api"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/aws"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/config"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/pricing"
+	"github.com/johnjeffers/awscogs/backend/internal/api"
+	"github.com/johnjeffers/awscogs/backend/internal/aws"
+	"github.com/johnjeffers/awscogs/backend/internal/config"
+	"github.com/johnjeffers/awscogs/backend/internal/pricing"
 )
 
 func main() {

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/aws"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/config"
+	"github.com/johnjeffers/awscogs/backend/internal/aws"
+	"github.com/johnjeffers/awscogs/backend/internal/config"
 )
 
 // Server is the HTTP server for the awscogs API

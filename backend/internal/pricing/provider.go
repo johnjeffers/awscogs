@@ -3,7 +3,7 @@ package pricing
 import (
 	"context"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/types"
+	"github.com/johnjeffers/awscogs/backend/internal/types"
 )
 
 // Provider retrieves pricing information for AWS resources

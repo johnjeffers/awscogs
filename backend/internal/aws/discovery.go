@@ -21,8 +21,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/pricing"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/types"
+	"github.com/johnjeffers/awscogs/backend/internal/pricing"
+	"github.com/johnjeffers/awscogs/backend/internal/types"
 )
 
 // Discovery handles AWS resource discovery across accounts and regions

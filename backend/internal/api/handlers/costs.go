@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/aws"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/config"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/types"
+	"github.com/johnjeffers/awscogs/backend/internal/aws"
+	"github.com/johnjeffers/awscogs/backend/internal/config"
+	"github.com/johnjeffers/awscogs/backend/internal/types"
 )
 
 // CostsHandler handles cost-related requests

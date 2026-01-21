@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/aws"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/config"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version"
+	"github.com/johnjeffers/awscogs/backend/internal/aws"
+	"github.com/johnjeffers/awscogs/backend/internal/config"
+	"github.com/johnjeffers/awscogs/backend/internal/version"
 )
 
 // ConfigHandler handles configuration requests

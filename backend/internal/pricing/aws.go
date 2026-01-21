@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
 
-	cogtypes "github.com/johnjeffers/infra-utilities/awscogs/backend/internal/types"
+	cogtypes "github.com/johnjeffers/awscogs/backend/internal/types"
 )
 
 // AWSProvider implements Provider using the AWS Price List API

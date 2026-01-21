@@ -15,7 +15,7 @@ WORKDIR /app
 COPY backend/ ./backend/
 COPY --from=frontend-builder /app/frontend/dist ./backend/internal/api/dist
 WORKDIR /app/backend
-RUN go build -ldflags="-X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.Version=${VERSION} -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.GitCommit=${GIT_COMMIT} -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.BuildTime=${BUILD_TIME}" -o /awscogs ./cmd/awscogs
+RUN go build -ldflags="-X github.com/johnjeffers/awscogs/backend/internal/version.Version=${VERSION} -X github.com/johnjeffers/awscogs/backend/internal/version.GitCommit=${GIT_COMMIT} -X github.com/johnjeffers/awscogs/backend/internal/version.BuildTime=${BUILD_TIME}" -o /awscogs ./cmd/awscogs
 
 # Runtime image
 FROM alpine:3

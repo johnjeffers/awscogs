@@ -1,4 +1,4 @@
-module github.com/johnjeffers/infra-utilities/awscogs/backend
+module github.com/johnjeffers/awscogs/backend
 
 go 1.25
 

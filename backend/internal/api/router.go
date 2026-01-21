@@ -7,9 +7,9 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/api/handlers"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/aws"
-	"github.com/johnjeffers/infra-utilities/awscogs/backend/internal/config"
+	"github.com/johnjeffers/awscogs/backend/internal/api/handlers"
+	"github.com/johnjeffers/awscogs/backend/internal/aws"
+	"github.com/johnjeffers/awscogs/backend/internal/config"
 )
 
 // NewRouter creates and configures the HTTP router

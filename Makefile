@@ -1,14 +1,15 @@
 .PHONY: dev backend frontend build clean install vet update docker-build
 
 # Version info (auto-detected from git tags, can be overridden)
+IMAGE_NAME ?= jjeffers/awscogs
 VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null || echo "0.0.0-dev")
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Linker flags for version injection
-LDFLAGS = -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.Version=$(VERSION) \
-          -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.GitCommit=$(GIT_COMMIT) \
-          -X github.com/johnjeffers/infra-utilities/awscogs/backend/internal/version.BuildTime=$(BUILD_TIME)
+LDFLAGS = -X github.com/johnjeffers/awscogs/backend/internal/version.Version=$(VERSION) \
+          -X github.com/johnjeffers/awscogs/backend/internal/version.GitCommit=$(GIT_COMMIT) \
+          -X github.com/johnjeffers/awscogs/backend/internal/version.BuildTime=$(BUILD_TIME)
 
 # Run both backend and frontend for local development
 dev:
@@ -61,6 +62,6 @@ docker-build:
 		--build-arg VERSION=$(VERSION) \
 		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
 		--build-arg BUILD_TIME=$(BUILD_TIME) \
-		-t awscogs:$(VERSION) \
-		-t awscogs:latest \
+		-t $(IMAGE_NAME):$(VERSION) \
+		-t $(IMAGE_NAME):latest \
 		.
