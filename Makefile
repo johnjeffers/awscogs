@@ -25,10 +25,12 @@ update:
 	cd backend && go get -u ./... && go mod tidy
 	cd frontend && npx npm-check-updates -u && npm install
 
-# Build for production
+# Build for production (single binary with embedded frontend)
 build:
-	cd backend && go build -o bin/awscogs ./cmd/awscogs
 	cd frontend && npm run build
+	rm -rf backend/internal/api/dist
+	cp -r frontend/dist backend/internal/api/dist
+	cd backend && go build -o bin/awscogs ./cmd/awscogs
 
 # Run go vet and staticcheck on backend
 vet:
@@ -39,3 +41,6 @@ vet:
 clean:
 	rm -rf backend/bin
 	rm -rf frontend/dist
+	rm -rf backend/internal/api/dist
+	mkdir -p backend/internal/api/dist
+	touch backend/internal/api/dist/.gitkeep

@@ -56,5 +56,8 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 		r.Get("/costs/publicipv4", costsHandler.GetPublicIPv4Costs)
 	})
 
+	// Serve embedded frontend for all other routes
+	r.Handle("/*", NewSPAHandler())
+
 	return r
 }
