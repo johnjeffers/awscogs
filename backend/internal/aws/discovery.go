@@ -4,8 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -43,8 +41,8 @@ type Discovery struct {
 	resourceTTL time.Duration
 	accountTTL  time.Duration
 
-	// Resource discovery cache
-	resourceCache   map[string]cacheEntry[*types.CostResponse]
+	// Resource discovery cache - keyed by "accountID|region|resourceType"
+	resourceCache   map[string]cacheEntry[any]
 	resourceCacheMu sync.RWMutex
 
 	// Account discovery cache
@@ -63,7 +61,7 @@ func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger, resourc
 		logger:          logger,
 		resourceTTL:     time.Duration(resourceTTLMinutes) * time.Minute,
 		accountTTL:      time.Duration(accountTTLMinutes) * time.Minute,
-		resourceCache:   make(map[string]cacheEntry[*types.CostResponse]),
+		resourceCache:   make(map[string]cacheEntry[any]),
 	}
 }
 
@@ -74,18 +72,9 @@ type Account struct {
 	RoleARN string
 }
 
-// buildCacheKey creates a cache key from accounts, regions, and resource types
-func buildCacheKey(accounts []Account, regions []string, resourceTypes []string) string {
-	// Sort inputs for consistent keys
-	accountIDs := make([]string, len(accounts))
-	for i, a := range accounts {
-		accountIDs[i] = a.ID
-	}
-	sort.Strings(accountIDs)
-	sort.Strings(regions)
-	sort.Strings(resourceTypes)
-
-	return strings.Join(accountIDs, ",") + "|" + strings.Join(regions, ",") + "|" + strings.Join(resourceTypes, ",")
+// resourceCacheKey creates a cache key for a specific account/region/resourceType combination
+func resourceCacheKey(accountID, region, resourceType string) string {
+	return accountID + "|" + region + "|" + resourceType
 }
 
 // shouldDiscover checks if a resource type should be discovered based on the filter
@@ -104,17 +93,6 @@ func shouldDiscover(resourceTypes []string, resourceType string) bool {
 // DiscoverResources discovers all resources across the specified accounts and regions
 // resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets, publicipv4)
 func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string, resourceTypes []string) (*types.CostResponse, error) {
-	// Check cache first
-	cacheKey := buildCacheKey(accounts, regions, resourceTypes)
-
-	d.resourceCacheMu.RLock()
-	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
-		d.resourceCacheMu.RUnlock()
-		d.logger.Debug("returning cached resource discovery result", "cacheKey", cacheKey)
-		return entry.value, nil
-	}
-	d.resourceCacheMu.RUnlock()
-
 	var (
 		allEC2        []types.EC2Instance
 		allEBS        []types.EBSVolume
@@ -183,112 +161,52 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 
 				// Discover EC2 instances
 				if shouldDiscover(resourceTypes, "ec2") {
-					ec2Instances, err = d.discoverEC2(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover EC2 instances",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					ec2Instances = d.getOrDiscoverEC2(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover EBS volumes
 				if shouldDiscover(resourceTypes, "ebs") {
-					ebsVolumes, err = d.discoverEBS(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover EBS volumes",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					ebsVolumes = d.getOrDiscoverEBS(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover ECS services
 				if shouldDiscover(resourceTypes, "ecs") {
-					ecsServices, err = d.discoverECS(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover ECS services",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					ecsServices = d.getOrDiscoverECS(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover RDS instances
 				if shouldDiscover(resourceTypes, "rds") {
-					rdsInstances, err = d.discoverRDS(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover RDS instances",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					rdsInstances = d.getOrDiscoverRDS(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover EKS clusters
 				if shouldDiscover(resourceTypes, "eks") {
-					eksClusters, err = d.discoverEKS(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover EKS clusters",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					eksClusters = d.getOrDiscoverEKS(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover Load Balancers
 				if shouldDiscover(resourceTypes, "elb") {
-					loadBalancers, err = d.discoverELB(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover load balancers",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					loadBalancers = d.getOrDiscoverELB(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover NAT Gateways
 				if shouldDiscover(resourceTypes, "nat") {
-					natGateways, err = d.discoverNATGateways(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover NAT gateways",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					natGateways = d.getOrDiscoverNATGateways(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover Elastic IPs
 				if shouldDiscover(resourceTypes, "eip") {
-					elasticIPs, err = d.discoverElasticIPs(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover Elastic IPs",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					elasticIPs = d.getOrDiscoverElasticIPs(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover Secrets
 				if shouldDiscover(resourceTypes, "secrets") {
-					secrets, err = d.discoverSecrets(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover secrets",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					secrets = d.getOrDiscoverSecrets(ctx, cfg, accountID, accountName, reg)
 				}
 
 				// Discover Public IPv4 addresses
 				if shouldDiscover(resourceTypes, "publicipv4") {
-					publicIPv4s, err = d.discoverPublicIPv4s(ctx, cfg, accountID, accountName, reg)
-					if err != nil {
-						d.logger.Error("failed to discover public IPv4 addresses",
-							"account", acc.Name,
-							"region", reg,
-							"error", err)
-					}
+					publicIPv4s = d.getOrDiscoverPublicIPv4s(ctx, cfg, accountID, accountName, reg)
 				}
 
 				mu.Lock()
@@ -361,15 +279,6 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		Secrets:       allSecrets,
 		PublicIPv4s:   allPublicIPv4,
 	}
-
-	// Cache the result
-	d.resourceCacheMu.Lock()
-	d.resourceCache[cacheKey] = cacheEntry[*types.CostResponse]{
-		value:     result,
-		expiresAt: time.Now().Add(d.resourceTTL),
-	}
-	d.resourceCacheMu.Unlock()
-	d.logger.Debug("cached resource discovery result", "cacheKey", cacheKey, "ttl", d.resourceTTL)
 
 	return result, nil
 }
@@ -1363,6 +1272,266 @@ func isRDSNonBillableState(state string) bool {
 		return true
 	}
 	return false
+}
+
+// getOrDiscoverEC2 returns cached EC2 instances or discovers them
+func (d *Discovery) getOrDiscoverEC2(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.EC2Instance {
+	cacheKey := resourceCacheKey(accountID, region, "ec2")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.EC2Instance)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverEC2(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover EC2 instances", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverEBS returns cached EBS volumes or discovers them
+func (d *Discovery) getOrDiscoverEBS(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.EBSVolume {
+	cacheKey := resourceCacheKey(accountID, region, "ebs")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.EBSVolume)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverEBS(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover EBS volumes", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverECS returns cached ECS services or discovers them
+func (d *Discovery) getOrDiscoverECS(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.ECSService {
+	cacheKey := resourceCacheKey(accountID, region, "ecs")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.ECSService)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverECS(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover ECS services", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverRDS returns cached RDS instances or discovers them
+func (d *Discovery) getOrDiscoverRDS(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.RDSInstance {
+	cacheKey := resourceCacheKey(accountID, region, "rds")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.RDSInstance)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverRDS(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover RDS instances", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverEKS returns cached EKS clusters or discovers them
+func (d *Discovery) getOrDiscoverEKS(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.EKSCluster {
+	cacheKey := resourceCacheKey(accountID, region, "eks")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.EKSCluster)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverEKS(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover EKS clusters", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverELB returns cached load balancers or discovers them
+func (d *Discovery) getOrDiscoverELB(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.LoadBalancer {
+	cacheKey := resourceCacheKey(accountID, region, "elb")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.LoadBalancer)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverELB(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover load balancers", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverNATGateways returns cached NAT gateways or discovers them
+func (d *Discovery) getOrDiscoverNATGateways(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.NATGateway {
+	cacheKey := resourceCacheKey(accountID, region, "nat")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.NATGateway)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverNATGateways(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover NAT gateways", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverElasticIPs returns cached Elastic IPs or discovers them
+func (d *Discovery) getOrDiscoverElasticIPs(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.ElasticIP {
+	cacheKey := resourceCacheKey(accountID, region, "eip")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.ElasticIP)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverElasticIPs(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover Elastic IPs", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverSecrets returns cached secrets or discovers them
+func (d *Discovery) getOrDiscoverSecrets(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.Secret {
+	cacheKey := resourceCacheKey(accountID, region, "secrets")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.Secret)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverSecrets(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover secrets", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
+}
+
+// getOrDiscoverPublicIPv4s returns cached public IPv4 addresses or discovers them
+func (d *Discovery) getOrDiscoverPublicIPv4s(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.PublicIPv4 {
+	cacheKey := resourceCacheKey(accountID, region, "publicipv4")
+
+	d.resourceCacheMu.RLock()
+	if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
+		d.resourceCacheMu.RUnlock()
+		d.logger.Debug("cache hit", "key", cacheKey)
+		return entry.value.([]types.PublicIPv4)
+	}
+	d.resourceCacheMu.RUnlock()
+
+	result, err := d.discoverPublicIPv4s(ctx, cfg, accountID, accountName, region)
+	if err != nil {
+		d.logger.Error("failed to discover public IPv4 addresses", "account", accountName, "region", region, "error", err)
+		return nil
+	}
+
+	d.resourceCacheMu.Lock()
+	d.resourceCache[cacheKey] = cacheEntry[any]{value: result, expiresAt: time.Now().Add(d.resourceTTL)}
+	d.resourceCacheMu.Unlock()
+	d.logger.Debug("cached", "key", cacheKey)
+
+	return result
 }
 
 // buildAccountSummaries builds account-level cost summaries
