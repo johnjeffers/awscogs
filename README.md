@@ -39,7 +39,9 @@ Currently, the only way to use the app is to clone this repo and run it locally.
 - Node 25
 - Valid AWS credentials
 
-### Running the App
+### Run in dev mode
+
+Run in dev mode when you're working on the app.
 
 Set `AWS_PROFILE` before starting the app.
 
@@ -57,9 +59,9 @@ Running in dev mode exposes the Vite dev server on port 3000.
 
 Open http://localhost:3000
 
-### Building the App
+### Build and run a binary
 
-Run `make build` to build the binary.
+When you're ready to build a binary, run `make build`
 
 Run the binary:
 
