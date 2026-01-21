@@ -1,35 +1,21 @@
 import React from 'react';
 
 interface CostSummaryProps {
+  selectedCost: number;
   totalCost: number;
-  ec2Count: number;
-  ebsCount: number;
-  ecsCount: number;
-  rdsCount: number;
-  eksCount: number;
-  elbCount: number;
-  natCount: number;
-  eipCount: number;
-  secretCount: number;
-  publicIpv4Count: number;
+  selectedCount: number;
+  totalCount: number;
   currency: string;
 }
 
 export const CostSummary: React.FC<CostSummaryProps> = ({
+  selectedCost,
   totalCost,
-  ec2Count,
-  ebsCount,
-  ecsCount,
-  rdsCount,
-  eksCount,
-  elbCount,
-  natCount,
-  eipCount,
-  secretCount,
-  publicIpv4Count,
+  selectedCount,
+  totalCount,
   currency,
 }) => {
-  const formatCost = (cost: number, decimals: number = 4) => {
+  const formatCost = (cost: number, decimals: number = 2) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: currency,
@@ -38,8 +24,12 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
     }).format(cost);
   };
 
-  const dailyCost = totalCost * 24;
-  const monthlyCost = totalCost * 730;
+  const selectedDaily = selectedCost * 24;
+  const totalDaily = totalCost * 24;
+  const selectedMonthly = selectedCost * 730;
+  const totalMonthly = totalCost * 730;
+
+  const showBoth = selectedCost !== totalCost || selectedCount !== totalCount;
 
   return (
     <div className="mb-6">
@@ -50,9 +40,16 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
             <dt className="text-sm font-medium text-gray-500 truncate">
               Hourly Cost
             </dt>
-            <dd className="mt-1 text-2xl font-semibold text-gray-900">
-              {formatCost(totalCost, 2)}
-            </dd>
+            {showBoth ? (
+              <dd className="mt-1">
+                <div className="text-2xl font-semibold text-gray-900">{formatCost(selectedCost)}</div>
+                <div className="text-sm text-gray-500">of {formatCost(totalCost)} total</div>
+              </dd>
+            ) : (
+              <dd className="mt-1 text-2xl font-semibold text-gray-900">
+                {formatCost(totalCost)}
+              </dd>
+            )}
           </div>
         </div>
 
@@ -62,9 +59,16 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
             <dt className="text-sm font-medium text-gray-500 truncate">
               Daily Cost
             </dt>
-            <dd className="mt-1 text-2xl font-semibold text-gray-900">
-              {formatCost(dailyCost, 2)}
-            </dd>
+            {showBoth ? (
+              <dd className="mt-1">
+                <div className="text-2xl font-semibold text-gray-900">{formatCost(selectedDaily)}</div>
+                <div className="text-sm text-gray-500">of {formatCost(totalDaily)} total</div>
+              </dd>
+            ) : (
+              <dd className="mt-1 text-2xl font-semibold text-gray-900">
+                {formatCost(totalDaily)}
+              </dd>
+            )}
           </div>
         </div>
 
@@ -74,9 +78,16 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
             <dt className="text-sm font-medium text-gray-500 truncate">
               Monthly Cost
             </dt>
-            <dd className="mt-1 text-2xl font-semibold text-gray-900">
-              {formatCost(monthlyCost, 2)}
-            </dd>
+            {showBoth ? (
+              <dd className="mt-1">
+                <div className="text-2xl font-semibold text-gray-900">{formatCost(selectedMonthly)}</div>
+                <div className="text-sm text-gray-500">of {formatCost(totalMonthly)} total</div>
+              </dd>
+            ) : (
+              <dd className="mt-1 text-2xl font-semibold text-gray-900">
+                {formatCost(totalMonthly)}
+              </dd>
+            )}
           </div>
         </div>
 
@@ -86,9 +97,16 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
             <dt className="text-sm font-medium text-gray-500 truncate">
               Resources
             </dt>
-            <dd className="mt-1 text-2xl font-semibold text-gray-900">
-              {ec2Count + ebsCount + ecsCount + rdsCount + eksCount + elbCount + natCount + eipCount + secretCount + publicIpv4Count}
-            </dd>
+            {showBoth ? (
+              <dd className="mt-1">
+                <div className="text-2xl font-semibold text-gray-900">{selectedCount}</div>
+                <div className="text-sm text-gray-500">of {totalCount} total</div>
+              </dd>
+            ) : (
+              <dd className="mt-1 text-2xl font-semibold text-gray-900">
+                {totalCount}
+              </dd>
+            )}
           </div>
         </div>
       </div>

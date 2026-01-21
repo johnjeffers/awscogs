@@ -155,17 +155,56 @@ export const CostDashboard: React.FC = () => {
     return `${filtered}/${total}`;
   };
 
-  // Calculate totals
-  const ec2Count = data?.ec2Instances?.length || 0;
-  const ebsCount = data?.ebsVolumes?.length || 0;
-  const ecsCount = data?.ecsServices?.length || 0;
-  const rdsCount = data?.rdsInstances?.length || 0;
-  const eksCount = data?.eksClusters?.length || 0;
-  const elbCount = data?.loadBalancers?.length || 0;
-  const natCount = data?.natGateways?.length || 0;
-  const eipCount = data?.elasticIps?.length || 0;
-  const secretCount = data?.secrets?.length || 0;
-  const publicIpv4Count = data?.publicIpv4s?.length || 0;
+  // Calculate totals from all data (unfiltered)
+  const totals = useMemo(() => {
+    if (!data) return { cost: 0, count: 0 };
+    const cost = data.totalCost;
+    const count = (data.ec2Instances?.length || 0) + (data.ebsVolumes?.length || 0) +
+      (data.ecsServices?.length || 0) + (data.rdsInstances?.length || 0) + (data.eksClusters?.length || 0) +
+      (data.loadBalancers?.length || 0) + (data.natGateways?.length || 0) + (data.elasticIps?.length || 0) +
+      (data.secrets?.length || 0) + (data.publicIpv4s?.length || 0);
+    return { cost, count };
+  }, [data]);
+
+  // Calculate selected summary based on active tab and filter
+  const selectedData = useMemo(() => {
+    if (!filteredData) return { cost: 0, count: 0 };
+
+    const sumCost = (items: { hourlyCost: number }[] | undefined) =>
+      items?.reduce((sum, item) => sum + item.hourlyCost, 0) || 0;
+
+    const isResourceTab = activeTab !== 'accounts' && activeTab !== 'regions';
+
+    // For accounts/regions tabs, sum all filtered resource types
+    if (!isResourceTab) {
+      const cost = sumCost(filteredData.ec2) + sumCost(filteredData.ebs) + sumCost(filteredData.ecs) +
+        sumCost(filteredData.rds) + sumCost(filteredData.eks) + sumCost(filteredData.elb) +
+        sumCost(filteredData.nat) + sumCost(filteredData.eip) + sumCost(filteredData.secrets) +
+        sumCost(filteredData.publicipv4);
+      const count = (filteredData.ec2?.length || 0) + (filteredData.ebs?.length || 0) +
+        (filteredData.ecs?.length || 0) + (filteredData.rds?.length || 0) + (filteredData.eks?.length || 0) +
+        (filteredData.elb?.length || 0) + (filteredData.nat?.length || 0) + (filteredData.eip?.length || 0) +
+        (filteredData.secrets?.length || 0) + (filteredData.publicipv4?.length || 0);
+      return { cost, count };
+    }
+
+    // For specific resource tabs, show only that resource type's data
+    let items: { hourlyCost: number }[] | undefined;
+    switch (activeTab) {
+      case 'ec2': items = filteredData.ec2; break;
+      case 'ebs': items = filteredData.ebs; break;
+      case 'ecs': items = filteredData.ecs; break;
+      case 'rds': items = filteredData.rds; break;
+      case 'eks': items = filteredData.eks; break;
+      case 'elb': items = filteredData.elb; break;
+      case 'nat': items = filteredData.nat; break;
+      case 'eip': items = filteredData.eip; break;
+      case 'secrets': items = filteredData.secrets; break;
+      case 'publicipv4': items = filteredData.publicipv4; break;
+    }
+
+    return { cost: sumCost(items), count: items?.length || 0 };
+  }, [filteredData, activeTab]);
 
   const exportToCSV = () => {
     if (!filteredData) return;
@@ -405,17 +444,10 @@ export const CostDashboard: React.FC = () => {
       {data && (
         <>
           <CostSummary
-            totalCost={data.totalCost}
-            ec2Count={ec2Count}
-            ebsCount={ebsCount}
-            ecsCount={ecsCount}
-            rdsCount={rdsCount}
-            eksCount={eksCount}
-            elbCount={elbCount}
-            natCount={natCount}
-            eipCount={eipCount}
-            secretCount={secretCount}
-            publicIpv4Count={publicIpv4Count}
+            selectedCost={selectedData.cost}
+            totalCost={totals.cost}
+            selectedCount={selectedData.count}
+            totalCount={totals.count}
             currency={data.currency}
           />
 
