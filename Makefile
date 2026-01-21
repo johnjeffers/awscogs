@@ -1,7 +1,7 @@
 .PHONY: dev backend frontend build clean install vet update docker-build
 
-# Version info (auto-detected from git, can be overridden)
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+# Version info (auto-detected from git tags, can be overridden)
+VERSION ?= $(shell git describe --tags --match 'v*' --abbrev=0 2>/dev/null || echo "0.0.0-dev")
 GIT_COMMIT ?= $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_TIME ?= $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
