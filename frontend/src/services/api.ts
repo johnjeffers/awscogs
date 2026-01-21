@@ -1,10 +1,14 @@
-import axios from 'axios';
 import type { CostResponse, CostFilters, ConfigResponse } from '../types/cost';
 
-const api = axios.create({
-  baseURL: '/api/v1',
-  timeout: 5 * 60 * 1000, // 5 minutes for large queries
-});
+async function fetchApi<T>(url: string): Promise<T> {
+  const response = await fetch(`/api/v1${url}`, {
+    signal: AbortSignal.timeout(5 * 60 * 1000), // 5 minutes for large queries
+  });
+  if (!response.ok) {
+    throw new Error(`API error: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
 
 export const costApi = {
   async getCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -18,8 +22,8 @@ export const costApi = {
     if (filters.resources?.length) {
       params.set('resource', filters.resources.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs?${params.toString()}`);
+    return response;
   },
 
   async getAccountCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -30,8 +34,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/accounts?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/accounts?${params.toString()}`);
+    return response;
   },
 
   async getRegionCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -42,8 +46,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/regions?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/regions?${params.toString()}`);
+    return response;
   },
 
   async getEC2Costs(filters: CostFilters = {}): Promise<CostResponse> {
@@ -54,8 +58,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/ec2?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/ec2?${params.toString()}`);
+    return response;
   },
 
   async getEBSCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -66,8 +70,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/ebs?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/ebs?${params.toString()}`);
+    return response;
   },
 
   async getRDSCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -78,8 +82,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/rds?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/rds?${params.toString()}`);
+    return response;
   },
 
   async getEKSCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -90,8 +94,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/eks?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/eks?${params.toString()}`);
+    return response;
   },
 
   async getELBCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -102,8 +106,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/elb?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/elb?${params.toString()}`);
+    return response;
   },
 
   async getNATGatewayCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -114,8 +118,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/nat?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/nat?${params.toString()}`);
+    return response;
   },
 
   async getElasticIPCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -126,8 +130,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/eip?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/eip?${params.toString()}`);
+    return response;
   },
 
   async getSecretsCosts(filters: CostFilters = {}): Promise<CostResponse> {
@@ -138,8 +142,8 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/secrets?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/secrets?${params.toString()}`);
+    return response;
   },
 
   async getPublicIPv4Costs(filters: CostFilters = {}): Promise<CostResponse> {
@@ -150,14 +154,13 @@ export const costApi = {
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
     }
-    const response = await api.get<CostResponse>(`/costs/publicipv4?${params.toString()}`);
-    return response.data;
+    const response = await fetchApi<CostResponse>(`/costs/publicipv4?${params.toString()}`);
+    return response;
   },
 };
 
 export const configApi = {
   async getConfig(): Promise<ConfigResponse> {
-    const response = await api.get<ConfigResponse>('/config');
-    return response.data;
+    return fetchApi<ConfigResponse>('/config');
   },
 };
