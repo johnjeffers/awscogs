@@ -18,11 +18,28 @@ spec:
       {{- if .Values.serviceAccount.create }}
       serviceAccountName: awscogs
       {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
       containers:
         - name: awscogs
           image: "{{ .Values.deployment.image }}"
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - containerPort: 8080
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
 {{- if .Values.deployment.env }}
           env:
 {{ toYaml .Values.deployment.env | indent 12 }}

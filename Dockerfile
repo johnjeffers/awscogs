@@ -19,7 +19,10 @@ RUN go build -ldflags="-X github.com/johnjeffers/awscogs/backend/internal/versio
 
 # Runtime image
 FROM alpine:3
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && \
+    addgroup -g 1000 awscogs && \
+    adduser -u 1000 -G awscogs -D awscogs
 COPY --from=backend-builder /awscogs /usr/local/bin/awscogs
+USER awscogs
 EXPOSE 8080
 ENTRYPOINT ["awscogs"]

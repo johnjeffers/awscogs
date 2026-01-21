@@ -49,7 +49,7 @@ This command assumes that you have a valid SSO token in `~/.aws`
 ```sh
 docker run \
   -p 8080:8080 \
-  -v "$HOME/.aws:/root/.aws" \
+  -v "$HOME/.aws:/home/awscogs/.aws" \
   -e AWS_PROFILE=profile-name \
   jjeffers/awscogs:latest
 ```
