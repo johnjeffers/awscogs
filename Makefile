@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend build clean install vet update
+.PHONY: dev backend frontend build clean install vet update docker-build
 
 # Run both backend and frontend for local development
 dev:
@@ -44,3 +44,7 @@ clean:
 	rm -rf backend/internal/api/dist
 	mkdir -p backend/internal/api/dist
 	touch backend/internal/api/dist/.gitkeep
+
+# Build Docker image
+docker-build:
+	docker build -t awscogs .
