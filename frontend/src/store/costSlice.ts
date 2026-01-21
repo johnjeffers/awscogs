@@ -55,9 +55,6 @@ const costSlice = createSlice({
   name: 'costs',
   initialState,
   reducers: {
-    setFilters: (state, action: PayloadAction<CostFilters>) => {
-      state.filters = action.payload;
-    },
     setSelectedAccounts: (state, action: PayloadAction<string[]>) => {
       state.selectedAccounts = action.payload;
     },
@@ -66,13 +63,6 @@ const costSlice = createSlice({
     },
     setSelectedResources: (state, action: PayloadAction<string[]>) => {
       state.selectedResources = action.payload;
-    },
-    clearError: (state) => {
-      state.error = null;
-    },
-    clearData: (state) => {
-      state.data = null;
-      state.hasLoadedData = false;
     },
   },
   extraReducers: (builder) => {
@@ -105,5 +95,5 @@ const costSlice = createSlice({
   },
 });
 
-export const { setFilters, setSelectedAccounts, setSelectedRegions, setSelectedResources, clearError, clearData } = costSlice.actions;
+export const { setSelectedAccounts, setSelectedRegions, setSelectedResources } = costSlice.actions;
 export default costSlice.reducer;

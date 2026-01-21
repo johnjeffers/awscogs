@@ -16,8 +16,7 @@ import (
 func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 	r := chi.NewRouter()
 
-	// Middleware
-	r.Use(middleware.Logger)
+	// Base middleware (applied to all routes)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(cors.Handler(cors.Options{
@@ -29,21 +28,23 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 		MaxAge:           300,
 	}))
 
-	// Health check endpoint (root level)
+	// Health check endpoints (without logging)
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		w.Write([]byte("ok"))
+	})
+	r.Get("/api/v1/health", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"status":"ok"}`))
 	})
 
 	// Handlers
-	healthHandler := handlers.NewHealthHandler()
 	costsHandler := handlers.NewCostsHandler(cfg, discovery)
 	configHandler := handlers.NewConfigHandler(cfg, discovery)
 
-	// Routes
+	// Routes (with logging)
 	r.Route("/api/v1", func(r chi.Router) {
-		// Health
-		r.Get("/health", healthHandler.ServeHTTP)
+		r.Use(middleware.Logger)
 
 		// Configuration
 		r.Get("/config", configHandler.GetConfig)
