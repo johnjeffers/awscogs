@@ -1,0 +1,33 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: awscogs
+  labels:
+    app: awscogs
+spec:
+  replicas: "{{ .Values.deployment.replicas }}"
+  selector:
+    matchLabels:
+      app: awscogs
+  template:
+    metadata:
+      labels:
+        app: awscogs
+    spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: awscogs
+      {{- end }}
+      containers:
+        - name: awscogs
+          image: "{{ .Values.deployment.image }}"
+          ports:
+            - containerPort: 8080
+{{- if .Values.deployment.env }}
+          env:
+{{ toYaml .Values.deployment.env | indent 12 }}
+{{- end }}
+{{- if .Values.deployment.resources }}
+          resources:
+{{ toYaml .Values.deployment.resources | indent 12 }}
+{{- end }}
