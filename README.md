@@ -68,3 +68,7 @@ Run the binary:
 ```sh
 AWS_PROFILE=profile_name backend/bin/awscogs
 ```
+
+The built app listens on port 8080.
+
+Open http://localhost:8080
