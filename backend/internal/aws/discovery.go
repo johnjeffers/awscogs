@@ -1847,8 +1847,10 @@ func parseUsageWindow(window string) (duration time.Duration, period int32, err 
 		return 1 * time.Hour, 300, nil
 	case "24h":
 		return 24 * time.Hour, 3600, nil
+	case "30d":
+		return 30 * 24 * time.Hour, 86400, nil
 	default:
-		return 0, 0, fmt.Errorf("invalid usage window: %q (must be 1h or 24h)", window)
+		return 0, 0, fmt.Errorf("invalid usage window: %q (must be 1h, 24h, or 30d)", window)
 	}
 }
 
@@ -1860,6 +1862,8 @@ func usageCacheKey(accountID, region, window string) string {
 // usageCacheTTL returns the cache TTL for a given usage window
 func usageCacheTTL(window string) time.Duration {
 	switch window {
+	case "30d":
+		return 30 * time.Minute
 	case "24h":
 		return 10 * time.Minute
 	default:

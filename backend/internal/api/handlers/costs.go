@@ -397,8 +397,8 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 	if usageWindow == "" {
 		usageWindow = "1h"
 	}
-	if includeUsage && usageWindow != "1h" && usageWindow != "24h" {
-		http.Error(w, "invalid usageWindow: must be 1h or 24h", http.StatusBadRequest)
+	if includeUsage && usageWindow != "1h" && usageWindow != "24h" && usageWindow != "30d" {
+		http.Error(w, "invalid usageWindow: must be 1h, 24h, or 30d", http.StatusBadRequest)
 		return
 	}
 

@@ -27,7 +27,7 @@ export const CostDashboard: React.FC = () => {
   const { data, loading, error, hasLoadedData, selectedAccounts, selectedRegions, selectedResources } = useAppSelector((state) => state.costs);
   const [activeTab, setActiveTab] = useState<TabType>('accounts');
   const [filter, setFilter] = useState('');
-  const [usageWindow, setUsageWindow] = useState<'1h' | '24h'>('1h');
+  const [usageWindow, setUsageWindow] = useState<'1h' | '24h' | '30d'>('1h');
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Filter tabs based on selected resources (always show accounts and regions)
@@ -507,7 +507,7 @@ export const CostDashboard: React.FC = () => {
                 <div className="py-3 flex items-center gap-3 flex-shrink-0 ml-4">
                   {activeTab === 'elb' && (
                     <div className="flex items-center gap-1 border border-gray-300 rounded-md overflow-hidden">
-                      {(['1h', '24h'] as const).map((w) => (
+                      {(['1h', '24h', '30d'] as const).map((w) => (
                         <button
                           key={w}
                           onClick={() => setUsageWindow(w)}
