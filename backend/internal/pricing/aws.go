@@ -151,8 +151,8 @@ func (p *AWSProvider) GetEBSPrice(ctx context.Context, region, volumeType string
 
 	p.cacheMu.RLock()
 	basePrice, hasBase := p.ebsCache[baseCacheKey]
-	iopsPrice, hasIOPS := p.ebsCache[baseCacheKey+":iops"]
-	tpPrice, hasTP := p.ebsCache[baseCacheKey+":throughput"]
+	iopsPrice := p.ebsCache[baseCacheKey+":iops"]
+	tpPrice := p.ebsCache[baseCacheKey+":throughput"]
 	cacheValid := time.Now().Before(p.cacheExpiry)
 	p.cacheMu.RUnlock()
 
@@ -171,10 +171,6 @@ func (p *AWSProvider) GetEBSPrice(ctx context.Context, region, volumeType string
 			p.cacheExpiry = time.Now().Add(p.cacheDuration)
 		}
 		p.cacheMu.Unlock()
-	} else if hasIOPS {
-		// Use cached IOPS price
-	} else if hasTP {
-		// Use cached throughput price
 	}
 
 	// Calculate total monthly cost, then convert to hourly
@@ -708,17 +704,17 @@ func (p *AWSProvider) fetchRDSPrice(ctx context.Context, region, instanceClass, 
 // mapRDSEngine maps RDS engine names to pricing API database engine names
 func mapRDSEngine(engine string) string {
 	engineMap := map[string]string{
-		"mysql":            "MySQL",
-		"postgres":         "PostgreSQL",
-		"mariadb":          "MariaDB",
-		"oracle-se2":       "Oracle",
-		"oracle-ee":        "Oracle",
-		"sqlserver-se":     "SQL Server",
-		"sqlserver-ee":     "SQL Server",
-		"sqlserver-ex":     "SQL Server",
-		"sqlserver-web":    "SQL Server",
-		"aurora":           "Aurora MySQL",
-		"aurora-mysql":     "Aurora MySQL",
+		"mysql":             "MySQL",
+		"postgres":          "PostgreSQL",
+		"mariadb":           "MariaDB",
+		"oracle-se2":        "Oracle",
+		"oracle-ee":         "Oracle",
+		"sqlserver-se":      "SQL Server",
+		"sqlserver-ee":      "SQL Server",
+		"sqlserver-ex":      "SQL Server",
+		"sqlserver-web":     "SQL Server",
+		"aurora":            "Aurora MySQL",
+		"aurora-mysql":      "Aurora MySQL",
 		"aurora-postgresql": "Aurora PostgreSQL",
 	}
 
