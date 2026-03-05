@@ -44,6 +44,18 @@ export const fetchCosts = createAsyncThunk(
   }
 );
 
+export const fetchELBUsage = createAsyncThunk(
+  'costs/fetchELBUsage',
+  async (usageWindow: string, { getState }) => {
+    const state = getState() as { costs: CostState };
+    const filters: CostFilters = {
+      accounts: state.costs.selectedAccounts.length > 0 ? state.costs.selectedAccounts : undefined,
+      regions: state.costs.selectedRegions.length > 0 ? state.costs.selectedRegions : undefined,
+    };
+    return await costApi.getELBCosts(filters, { includeUsage: true, usageWindow });
+  }
+);
+
 export const fetchConfig = createAsyncThunk(
   'costs/fetchConfig',
   async () => {
@@ -79,6 +91,11 @@ const costSlice = createSlice({
       .addCase(fetchCosts.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch costs';
+      })
+      .addCase(fetchELBUsage.fulfilled, (state, action) => {
+        if (state.data) {
+          state.data.loadBalancers = action.payload.loadBalancers;
+        }
       })
       .addCase(fetchConfig.pending, (state) => {
         state.configLoading = true;

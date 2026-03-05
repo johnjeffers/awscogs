@@ -123,6 +123,15 @@ export interface LoadBalancer {
   scheme: string;
   state: string;
   hourlyCost: number;
+  usageWindow?: string;
+  usageStart?: string;
+  usageEnd?: string;
+  requestVolume?: number;
+  requestMetricName?: string;
+  bandwidthBytes?: number;
+  bandwidthMetricName?: string;
+  usageStatus?: string;
+  usageError?: string;
 }
 
 export interface NATGateway {

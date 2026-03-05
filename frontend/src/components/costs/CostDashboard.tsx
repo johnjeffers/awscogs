@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useAppSelector, useAppDispatch } from '../../hooks/useAppDispatch';
-import { fetchCosts, fetchConfig } from '../../store/costSlice';
+import { fetchCosts, fetchConfig, fetchELBUsage } from '../../store/costSlice';
 import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
@@ -27,6 +27,7 @@ export const CostDashboard: React.FC = () => {
   const { data, loading, error, hasLoadedData, selectedAccounts, selectedRegions, selectedResources } = useAppSelector((state) => state.costs);
   const [activeTab, setActiveTab] = useState<TabType>('accounts');
   const [filter, setFilter] = useState('');
+  const [usageWindow, setUsageWindow] = useState<'1h' | '24h'>('1h');
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Filter tabs based on selected resources (always show accounts and regions)
@@ -69,6 +70,13 @@ export const CostDashboard: React.FC = () => {
       }
     };
   }, [dispatch, hasLoadedData, selectedAccounts, selectedRegions, selectedResources]);
+
+  // Fetch ELB usage when ELB tab is active
+  useEffect(() => {
+    if (activeTab === 'elb' && hasLoadedData && data?.loadBalancers?.length) {
+      dispatch(fetchELBUsage(usageWindow));
+    }
+  }, [dispatch, activeTab, usageWindow, hasLoadedData, data?.loadBalancers?.length]);
 
   // Filter data based on active tab and filter text
   const filteredData = useMemo(() => {
@@ -317,20 +325,36 @@ export const CostDashboard: React.FC = () => {
           monthlyCost(cluster.hourlyCost).toFixed(2),
         ]);
         break;
-      case 'elb':
-        headers = ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.elb || []).map(lb => [
-          lb.accountName || lb.accountId,
-          lb.region,
-          lb.name,
-          lb.type,
-          lb.scheme,
-          lb.state,
-          lb.hourlyCost.toFixed(4),
-          dailyCost(lb.hourlyCost).toFixed(2),
-          monthlyCost(lb.hourlyCost).toFixed(2),
-        ]);
+      case 'elb': {
+        const hasUsage = (filteredData.elb || [])[0]?.usageStatus !== undefined;
+        headers = hasUsage
+          ? ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Requests/Flows', 'Bandwidth (bytes)', 'Usage Status', 'Hourly Cost', 'Daily Cost', 'Monthly Cost']
+          : ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.elb || []).map(lb => {
+          const base = [
+            lb.accountName || lb.accountId,
+            lb.region,
+            lb.name,
+            lb.type,
+            lb.scheme,
+            lb.state,
+          ];
+          if (hasUsage) {
+            base.push(
+              String(Math.round(lb.requestVolume || 0)),
+              String(Math.round(lb.bandwidthBytes || 0)),
+              lb.usageStatus || '',
+            );
+          }
+          base.push(
+            lb.hourlyCost.toFixed(4),
+            dailyCost(lb.hourlyCost).toFixed(2),
+            monthlyCost(lb.hourlyCost).toFixed(2),
+          );
+          return base;
+        });
         break;
+      }
       case 'nat':
         headers = ['Account', 'Region', 'Name', 'ID', 'State', 'Type', 'VPC ID', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.nat || []).map(nat => [
@@ -481,6 +505,23 @@ export const CostDashboard: React.FC = () => {
 
                 {/* Filter Input and Export - fixed on the right */}
                 <div className="py-3 flex items-center gap-3 flex-shrink-0 ml-4">
+                  {activeTab === 'elb' && (
+                    <div className="flex items-center gap-1 border border-gray-300 rounded-md overflow-hidden">
+                      {(['1h', '24h'] as const).map((w) => (
+                        <button
+                          key={w}
+                          onClick={() => setUsageWindow(w)}
+                          className={`px-3 py-2 text-sm font-medium ${
+                            usageWindow === w
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-gray-700 hover:bg-gray-50'
+                          }`}
+                        >
+                          {w}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">

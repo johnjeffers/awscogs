@@ -391,6 +391,17 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 	accountFilter := parseArrayParam(r, "account")
 	regionFilter := parseArrayParam(r, "region")
 
+	// Parse usage query params
+	includeUsage := r.URL.Query().Get("includeUsage") == "true"
+	usageWindow := r.URL.Query().Get("usageWindow")
+	if usageWindow == "" {
+		usageWindow = "1h"
+	}
+	if includeUsage && usageWindow != "1h" && usageWindow != "24h" {
+		http.Error(w, "invalid usageWindow: must be 1h or 24h", http.StatusBadRequest)
+		return
+	}
+
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -407,6 +418,11 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Enrich with CloudWatch usage if requested
+	if includeUsage && len(response.LoadBalancers) > 0 {
+		h.discovery.EnrichELBUsage(ctx, response.LoadBalancers, usageWindow, accounts)
 	}
 
 	// Calculate ELB-only total cost

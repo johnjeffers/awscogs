@@ -98,13 +98,19 @@ export const costApi = {
     return response;
   },
 
-  async getELBCosts(filters: CostFilters = {}): Promise<CostResponse> {
+  async getELBCosts(filters: CostFilters = {}, options?: { includeUsage?: boolean; usageWindow?: string }): Promise<CostResponse> {
     const params = new URLSearchParams();
     if (filters.accounts?.length) {
       params.set('account', filters.accounts.join(','));
     }
     if (filters.regions?.length) {
       params.set('region', filters.regions.join(','));
+    }
+    if (options?.includeUsage) {
+      params.set('includeUsage', 'true');
+      if (options.usageWindow) {
+        params.set('usageWindow', options.usageWindow);
+      }
     }
     const response = await fetchApi<CostResponse>(`/costs/elb?${params.toString()}`);
     return response;

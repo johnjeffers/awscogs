@@ -253,6 +253,19 @@ export const CostTable: React.FC<CostTableProps> = ({
   const dailyCost = (hourly: number) => hourly * 24;
   const monthlyCost = (hourly: number) => hourly * 730;
 
+  const formatBytes = (bytes: number | undefined): string => {
+    if (bytes === undefined || bytes === 0) return '0 B';
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    const value = bytes / Math.pow(1024, i);
+    return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+  };
+
+  const formatVolume = (volume: number | undefined): string => {
+    if (volume === undefined || volume === 0) return '0';
+    return new Intl.NumberFormat('en-US').format(Math.round(volume));
+  };
+
   const sortedAccounts = useMemo(() => {
     if (!accounts) return [];
     return sortData(accounts, accountSort);
@@ -667,6 +680,12 @@ export const CostTable: React.FC<CostTableProps> = ({
               <SortableHeader label="Type" sortKey="type" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
               <SortableHeader label="Scheme" sortKey="scheme" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
               <SortableHeader label="State" sortKey="state" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              {elb[0]?.usageStatus && (
+                <>
+                  <SortableHeader label="Requests / Flows" sortKey="requestVolume" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+                  <SortableHeader label="Bandwidth" sortKey="bandwidthBytes" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+                </>
+              )}
               <CostGroupHeader sortKey="hourlyCost" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
             </tr>
             <tr>
@@ -698,6 +717,28 @@ export const CostTable: React.FC<CostTableProps> = ({
                     {lb.state}
                   </span>
                 </td>
+                {elb[0]?.usageStatus && (
+                  <>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                      {lb.usageStatus === 'unavailable' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800" title={lb.usageError}>N/A</span>
+                      ) : lb.usageStatus === 'partial' ? (
+                        <span className="text-gray-400" title={lb.usageError}>{formatVolume(lb.requestVolume)}</span>
+                      ) : (
+                        formatVolume(lb.requestVolume)
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                      {lb.usageStatus === 'unavailable' ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800" title={lb.usageError}>N/A</span>
+                      ) : lb.usageStatus === 'partial' ? (
+                        <span className="text-gray-400" title={lb.usageError}>{formatBytes(lb.bandwidthBytes)}</span>
+                      ) : (
+                        formatBytes(lb.bandwidthBytes)
+                      )}
+                    </td>
+                  </>
+                )}
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(lb.hourlyCost)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(lb.hourlyCost), 2)}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(lb.hourlyCost), 2)}</td>

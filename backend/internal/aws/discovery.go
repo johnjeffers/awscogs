@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
+	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/aws/aws-sdk-go-v2/service/ecs"
@@ -52,6 +55,23 @@ type Discovery struct {
 	// Region discovery cache
 	regionCache   *cacheEntry[[]string]
 	regionCacheMu sync.RWMutex
+
+	// ELB usage cache - keyed by "accountID|region|window"
+	usageCache   map[string]cacheEntry[map[string]elbUsageData]
+	usageCacheMu sync.RWMutex
+
+	// Semaphore for CloudWatch concurrency control
+	cwSemaphore chan struct{}
+}
+
+// elbUsageData holds CloudWatch usage metrics for a single load balancer
+type elbUsageData struct {
+	RequestVolume       float64
+	RequestMetricName   string
+	BandwidthBytes      float64
+	BandwidthMetricName string
+	Status              string
+	Error               string
 }
 
 // NewDiscovery creates a new AWS resource discovery service
@@ -62,6 +82,8 @@ func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger, resourc
 		resourceTTL:     time.Duration(resourceTTLMinutes) * time.Minute,
 		accountTTL:      time.Duration(accountTTLMinutes) * time.Minute,
 		resourceCache:   make(map[string]cacheEntry[any]),
+		usageCache:      make(map[string]cacheEntry[map[string]elbUsageData]),
+		cwSemaphore:     make(chan struct{}, 10),
 	}
 }
 
@@ -1764,4 +1786,359 @@ func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EB
 		result = append(result, *s)
 	}
 	return result
+}
+
+// elbMetricMeta holds CloudWatch metric metadata for a load balancer type
+type elbMetricMeta struct {
+	namespace           string
+	dimensionName       string
+	dimensionValue      string
+	volumeMetric        string
+	bandwidthMetric     string
+}
+
+// getELBMetricMeta returns CloudWatch metric metadata for a load balancer
+func getELBMetricMeta(lb types.LoadBalancer) elbMetricMeta {
+	switch lb.Type {
+	case "network":
+		// NLB: extract resource portion from ARN (net/<name>/<id>)
+		return elbMetricMeta{
+			namespace:       "AWS/NetworkELB",
+			dimensionName:   "LoadBalancer",
+			dimensionValue:  extractLBResource(lb.ARN),
+			volumeMetric:    "NewFlowCount",
+			bandwidthMetric: "ProcessedBytes",
+		}
+	case "classic":
+		// CLB: use load balancer name as dimension
+		return elbMetricMeta{
+			namespace:       "AWS/ELB",
+			dimensionName:   "LoadBalancerName",
+			dimensionValue:  lb.Name,
+			volumeMetric:    "RequestCount",
+			bandwidthMetric: "EstimatedProcessedBytes",
+		}
+	default:
+		// ALB: extract resource portion from ARN (app/<name>/<id>)
+		return elbMetricMeta{
+			namespace:       "AWS/ApplicationELB",
+			dimensionName:   "LoadBalancer",
+			dimensionValue:  extractLBResource(lb.ARN),
+			volumeMetric:    "RequestCount",
+			bandwidthMetric: "ProcessedBytes",
+		}
+	}
+}
+
+// extractLBResource extracts the resource portion from an ELBv2 ARN
+// e.g., "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/my-alb/abc123" -> "app/my-alb/abc123"
+func extractLBResource(arn string) string {
+	const prefix = "loadbalancer/"
+	if idx := strings.LastIndex(arn, prefix); idx >= 0 {
+		return arn[idx+len(prefix):]
+	}
+	return arn
+}
+
+// parseUsageWindow returns the duration and CloudWatch period for a usage window string
+func parseUsageWindow(window string) (duration time.Duration, period int32, err error) {
+	switch window {
+	case "1h":
+		return 1 * time.Hour, 300, nil
+	case "24h":
+		return 24 * time.Hour, 3600, nil
+	default:
+		return 0, 0, fmt.Errorf("invalid usage window: %q (must be 1h or 24h)", window)
+	}
+}
+
+// usageCacheKey creates a cache key for ELB usage data
+func usageCacheKey(accountID, region, window string) string {
+	return accountID + "|" + region + "|" + window
+}
+
+// usageCacheTTL returns the cache TTL for a given usage window
+func usageCacheTTL(window string) time.Duration {
+	switch window {
+	case "24h":
+		return 10 * time.Minute
+	default:
+		return 3 * time.Minute
+	}
+}
+
+// EnrichELBUsage enriches a slice of load balancers with CloudWatch usage metrics.
+// It groups LBs by account+region, checks the usage cache, and fetches from CloudWatch as needed.
+func (d *Discovery) EnrichELBUsage(ctx context.Context, loadBalancers []types.LoadBalancer, window string, accounts []Account) {
+	windowDuration, period, err := parseUsageWindow(window)
+	if err != nil {
+		for i := range loadBalancers {
+			loadBalancers[i].UsageStatus = types.UsageStatusUnavailable
+			loadBalancers[i].UsageError = err.Error()
+		}
+		return
+	}
+
+	now := time.Now().UTC()
+	usageEnd := now
+	usageStart := now.Add(-windowDuration)
+
+	d.logger.Info("enriching ELB usage",
+		"lbCount", len(loadBalancers),
+		"window", window,
+		"accountCount", len(accounts))
+
+	// Build account lookup by ID and name for role ARN resolution
+	accountByID := make(map[string]Account)
+	for _, acc := range accounts {
+		if acc.ID != "" {
+			accountByID[acc.ID] = acc
+		}
+		if acc.Name != "" {
+			accountByID[acc.Name] = acc
+		}
+	}
+
+	// Group LBs by account+region for batched queries
+	type groupKey struct{ accountID, region string }
+	groups := make(map[groupKey][]int) // value = indices into loadBalancers
+	for i, lb := range loadBalancers {
+		key := groupKey{lb.AccountID, lb.Region}
+		groups[key] = append(groups[key], i)
+	}
+
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+
+	for gk, indices := range groups {
+		cacheKey := usageCacheKey(gk.accountID, gk.region, window)
+
+		// Check cache
+		d.usageCacheMu.RLock()
+		entry, cached := d.usageCache[cacheKey]
+		d.usageCacheMu.RUnlock()
+
+		if cached && time.Now().Before(entry.expiresAt) {
+			// Apply cached data
+			for _, i := range indices {
+				lb := &loadBalancers[i]
+				lbID := lb.ARN
+				if lbID == "" {
+					lbID = lb.Name
+				}
+				if usage, ok := entry.value[lbID]; ok {
+					lb.UsageWindow = window
+					lb.UsageStart = usageStart.Format(time.RFC3339)
+					lb.UsageEnd = usageEnd.Format(time.RFC3339)
+					lb.RequestVolume = usage.RequestVolume
+					lb.RequestMetricName = usage.RequestMetricName
+					lb.BandwidthBytes = usage.BandwidthBytes
+					lb.BandwidthMetricName = usage.BandwidthMetricName
+					lb.UsageStatus = usage.Status
+					lb.UsageError = usage.Error
+				}
+			}
+			continue
+		}
+
+		// Fetch from CloudWatch for this account+region group
+		wg.Add(1)
+		go func(gk groupKey, indices []int) {
+			defer wg.Done()
+
+			// Acquire semaphore
+			d.cwSemaphore <- struct{}{}
+			defer func() { <-d.cwSemaphore }()
+
+			// Get a config for this account+region, resolving role ARN from accounts list
+			acc, ok := accountByID[gk.accountID]
+			if !ok && len(indices) > 0 {
+				// Try lookup by account name
+				acc, ok = accountByID[loadBalancers[indices[0]].AccountName]
+			}
+			if !ok {
+				acc = Account{ID: gk.accountID}
+				if len(indices) > 0 {
+					acc.Name = loadBalancers[indices[0]].AccountName
+				}
+			}
+			d.logger.Info("resolved account for CloudWatch",
+				"accountID", gk.accountID,
+				"region", gk.region,
+				"resolvedName", acc.Name,
+				"hasRoleARN", acc.RoleARN != "",
+				"lbCount", len(indices))
+
+			cfg, err := d.getConfigForAccount(ctx, acc, gk.region)
+			if err != nil {
+				mu.Lock()
+				for _, i := range indices {
+					loadBalancers[i].UsageWindow = window
+					loadBalancers[i].UsageStart = usageStart.Format(time.RFC3339)
+					loadBalancers[i].UsageEnd = usageEnd.Format(time.RFC3339)
+					loadBalancers[i].UsageStatus = types.UsageStatusUnavailable
+					loadBalancers[i].UsageError = "failed to get AWS config: " + err.Error()
+				}
+				mu.Unlock()
+				return
+			}
+
+			cwClient := cloudwatch.NewFromConfig(cfg)
+			usageMap := make(map[string]elbUsageData)
+
+			for _, i := range indices {
+				lb := loadBalancers[i]
+				meta := getELBMetricMeta(lb)
+
+				lbID := lb.ARN
+				if lbID == "" {
+					lbID = lb.Name
+				}
+
+				usage := d.fetchLBUsage(ctx, cwClient, meta, usageStart, usageEnd, period)
+				usageMap[lbID] = usage
+
+				mu.Lock()
+				loadBalancers[i].UsageWindow = window
+				loadBalancers[i].UsageStart = usageStart.Format(time.RFC3339)
+				loadBalancers[i].UsageEnd = usageEnd.Format(time.RFC3339)
+				loadBalancers[i].RequestVolume = usage.RequestVolume
+				loadBalancers[i].RequestMetricName = usage.RequestMetricName
+				loadBalancers[i].BandwidthBytes = usage.BandwidthBytes
+				loadBalancers[i].BandwidthMetricName = usage.BandwidthMetricName
+				loadBalancers[i].UsageStatus = usage.Status
+				loadBalancers[i].UsageError = usage.Error
+				mu.Unlock()
+			}
+
+			// Cache results
+			d.usageCacheMu.Lock()
+			d.usageCache[cacheKey] = cacheEntry[map[string]elbUsageData]{
+				value:     usageMap,
+				expiresAt: time.Now().Add(usageCacheTTL(window)),
+			}
+			d.usageCacheMu.Unlock()
+		}(gk, indices)
+	}
+
+	wg.Wait()
+}
+
+// fetchLBUsage fetches CloudWatch metrics for a single load balancer
+func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client, meta elbMetricMeta, start, end time.Time, period int32) elbUsageData {
+	dimension := cwtypes.Dimension{
+		Name:  aws.String(meta.dimensionName),
+		Value: aws.String(meta.dimensionValue),
+	}
+
+	input := &cloudwatch.GetMetricDataInput{
+		StartTime: aws.Time(start),
+		EndTime:   aws.Time(end),
+		ScanBy:    cwtypes.ScanByTimestampDescending,
+		MetricDataQueries: []cwtypes.MetricDataQuery{
+			{
+				Id: aws.String("volume"),
+				MetricStat: &cwtypes.MetricStat{
+					Metric: &cwtypes.Metric{
+						Namespace:  aws.String(meta.namespace),
+						MetricName: aws.String(meta.volumeMetric),
+						Dimensions: []cwtypes.Dimension{dimension},
+					},
+					Period: aws.Int32(period),
+					Stat:   aws.String("Sum"),
+				},
+			},
+			{
+				Id: aws.String("bandwidth"),
+				MetricStat: &cwtypes.MetricStat{
+					Metric: &cwtypes.Metric{
+						Namespace:  aws.String(meta.namespace),
+						MetricName: aws.String(meta.bandwidthMetric),
+						Dimensions: []cwtypes.Dimension{dimension},
+					},
+					Period: aws.Int32(period),
+					Stat:   aws.String("Sum"),
+				},
+			},
+		},
+	}
+
+	d.logger.Info("fetching CloudWatch metrics",
+		"namespace", meta.namespace,
+		"dimensionName", meta.dimensionName,
+		"dimensionValue", meta.dimensionValue,
+		"volumeMetric", meta.volumeMetric,
+		"bandwidthMetric", meta.bandwidthMetric,
+		"start", start.Format(time.RFC3339),
+		"end", end.Format(time.RFC3339),
+		"period", period)
+
+	output, err := client.GetMetricData(ctx, input)
+	if err != nil {
+		d.logger.Warn("failed to get CloudWatch metrics",
+			"namespace", meta.namespace,
+			"dimensionValue", meta.dimensionValue,
+			"error", err)
+		return elbUsageData{
+			RequestMetricName:   meta.volumeMetric,
+			BandwidthMetricName: meta.bandwidthMetric,
+			Status:              types.UsageStatusUnavailable,
+			Error:               err.Error(),
+		}
+	}
+
+	var volumeSum, bandwidthSum float64
+	hasData := false
+
+	for _, result := range output.MetricDataResults {
+		if result.Id == nil {
+			continue
+		}
+		d.logger.Info("CloudWatch metric result",
+			"id", *result.Id,
+			"statusCode", result.StatusCode,
+			"datapointCount", len(result.Values),
+			"messageCount", len(result.Messages))
+		for _, msg := range result.Messages {
+			d.logger.Warn("CloudWatch message",
+				"id", *result.Id,
+				"code", aws.ToString(msg.Code),
+				"value", aws.ToString(msg.Value))
+		}
+		if result.StatusCode == cwtypes.StatusCodeInternalError {
+			d.logger.Warn("CloudWatch internal error for metric", "id", *result.Id)
+			continue
+		}
+		for _, v := range result.Values {
+			hasData = true
+			switch *result.Id {
+			case "volume":
+				volumeSum += v
+			case "bandwidth":
+				bandwidthSum += v
+			}
+		}
+	}
+
+	d.logger.Info("CloudWatch usage result",
+		"dimensionValue", meta.dimensionValue,
+		"volumeSum", volumeSum,
+		"bandwidthSum", bandwidthSum,
+		"hasData", hasData)
+
+	status := types.UsageStatusOK
+	usageErr := ""
+	if !hasData {
+		status = types.UsageStatusPartial
+		usageErr = "no datapoints in window"
+	}
+
+	return elbUsageData{
+		RequestVolume:       volumeSum,
+		RequestMetricName:   meta.volumeMetric,
+		BandwidthBytes:      bandwidthSum,
+		BandwidthMetricName: meta.bandwidthMetric,
+		Status:              status,
+		Error:               usageErr,
+	}
 }

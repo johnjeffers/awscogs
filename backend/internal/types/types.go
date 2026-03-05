@@ -73,17 +73,33 @@ type EKSCluster struct {
 	HourlyCost  CostValue `json:"hourlyCost"`
 }
 
+// Usage status constants
+const (
+	UsageStatusOK          = "ok"
+	UsageStatusPartial     = "partial"
+	UsageStatusUnavailable = "unavailable"
+)
+
 // LoadBalancer represents an Elastic Load Balancer with its cost
 type LoadBalancer struct {
-	AccountID   string    `json:"accountId"`
-	AccountName string    `json:"accountName"`
-	Region      string    `json:"region"`
-	Name        string    `json:"name"`
-	ARN         string    `json:"arn"`
-	Type        string    `json:"type"`   // application, network, classic
-	Scheme      string    `json:"scheme"` // internet-facing, internal
-	State       string    `json:"state"`
-	HourlyCost  CostValue `json:"hourlyCost"`
+	AccountID           string    `json:"accountId"`
+	AccountName         string    `json:"accountName"`
+	Region              string    `json:"region"`
+	Name                string    `json:"name"`
+	ARN                 string    `json:"arn"`
+	Type                string    `json:"type"`   // application, network, classic
+	Scheme              string    `json:"scheme"` // internet-facing, internal
+	State               string    `json:"state"`
+	HourlyCost          CostValue `json:"hourlyCost"`
+	UsageWindow         string    `json:"usageWindow,omitempty"`
+	UsageStart          string    `json:"usageStart,omitempty"`
+	UsageEnd            string    `json:"usageEnd,omitempty"`
+	RequestVolume       float64   `json:"requestVolume,omitempty"`
+	RequestMetricName   string    `json:"requestMetricName,omitempty"`
+	BandwidthBytes      float64   `json:"bandwidthBytes,omitempty"`
+	BandwidthMetricName string    `json:"bandwidthMetricName,omitempty"`
+	UsageStatus         string    `json:"usageStatus,omitempty"`
+	UsageError          string    `json:"usageError,omitempty"`
 }
 
 // NATGateway represents a NAT Gateway with its cost
