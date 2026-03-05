@@ -224,33 +224,53 @@ export const CostDashboard: React.FC = () => {
     const monthlyCost = (hourly: number) => hourly * 730;
 
     switch (activeTab) {
-      case 'accounts':
-        headers = ['Account ID', 'Account Name', 'EC2', 'EBS', 'ECS', 'RDS', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+      case 'accounts': {
+        const countCols = [
+          { key: 'ec2Count', label: 'EC2', id: 'ec2' },
+          { key: 'ebsCount', label: 'EBS', id: 'ebs' },
+          { key: 'ecsCount', label: 'ECS', id: 'ecs' },
+          { key: 'rdsCount', label: 'RDS', id: 'rds' },
+          { key: 'eksCount', label: 'EKS', id: 'eks' },
+          { key: 'elbCount', label: 'ELB', id: 'elb' },
+          { key: 'natCount', label: 'NAT', id: 'nat' },
+          { key: 'eipCount', label: 'EIP', id: 'eip' },
+          { key: 'secretCount', label: 'Secrets', id: 'secrets' },
+          { key: 'publicIpv4Count', label: 'IPv4', id: 'publicipv4' },
+        ].filter(c => selectedResources.includes(c.id));
+        headers = ['Account ID', 'Account Name', ...countCols.map(c => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.accounts || []).map(a => [
           a.accountId,
           a.accountName,
-          String(a.ec2Count),
-          String(a.ebsCount),
-          String(a.ecsCount),
-          String(a.rdsCount),
+          ...countCols.map(c => String((a as Record<string, unknown>)[c.key])),
           a.totalCost.toFixed(4),
           dailyCost(a.totalCost).toFixed(2),
           monthlyCost(a.totalCost).toFixed(2),
         ]);
         break;
-      case 'regions':
-        headers = ['Region', 'EC2', 'EBS', 'ECS', 'RDS', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+      }
+      case 'regions': {
+        const countCols = [
+          { key: 'ec2Count', label: 'EC2', id: 'ec2' },
+          { key: 'ebsCount', label: 'EBS', id: 'ebs' },
+          { key: 'ecsCount', label: 'ECS', id: 'ecs' },
+          { key: 'rdsCount', label: 'RDS', id: 'rds' },
+          { key: 'eksCount', label: 'EKS', id: 'eks' },
+          { key: 'elbCount', label: 'ELB', id: 'elb' },
+          { key: 'natCount', label: 'NAT', id: 'nat' },
+          { key: 'eipCount', label: 'EIP', id: 'eip' },
+          { key: 'secretCount', label: 'Secrets', id: 'secrets' },
+          { key: 'publicIpv4Count', label: 'IPv4', id: 'publicipv4' },
+        ].filter(c => selectedResources.includes(c.id));
+        headers = ['Region', ...countCols.map(c => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.regions || []).map(r => [
           r.region,
-          String(r.ec2Count),
-          String(r.ebsCount),
-          String(r.ecsCount),
-          String(r.rdsCount),
+          ...countCols.map(c => String((r as Record<string, unknown>)[c.key])),
           r.totalCost.toFixed(4),
           dailyCost(r.totalCost).toFixed(2),
           monthlyCost(r.totalCost).toFixed(2),
         ]);
         break;
+      }
       case 'ec2':
         headers = ['Account', 'Region', 'Name', 'Instance ID', 'Type', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.ec2 || []).map(inst => [
@@ -328,7 +348,7 @@ export const CostDashboard: React.FC = () => {
       case 'elb': {
         const hasUsage = (filteredData.elb || [])[0]?.usageStatus !== undefined;
         headers = hasUsage
-          ? ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Requests/Flows', 'Bandwidth (bytes)', 'Usage Status', 'Hourly Cost', 'Daily Cost', 'Monthly Cost']
+          ? ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Requests', 'Bandwidth (bytes)', 'Usage Status', 'Hourly Cost', 'Daily Cost', 'Monthly Cost']
           : ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.elb || []).map(lb => {
           const base = [
@@ -562,10 +582,10 @@ export const CostDashboard: React.FC = () => {
             {/* Tab Content */}
             <div>
               {activeTab === 'accounts' && (
-                <CostTable accounts={filteredData?.accounts} />
+                <CostTable accounts={filteredData?.accounts} selectedResources={selectedResources} />
               )}
               {activeTab === 'regions' && (
-                <CostTable regions={filteredData?.regions} />
+                <CostTable regions={filteredData?.regions} selectedResources={selectedResources} />
               )}
               {activeTab === 'ec2' && (
                 <CostTable ec2={filteredData?.ec2} />
