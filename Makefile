@@ -53,9 +53,9 @@ lint:
 	cd backend && go fmt ./...
 	cd backend && go vet ./...
 	cd backend && staticcheck ./...
-	cd frontend && npx prettier --write 'src/**/*.{ts,tsx}'
-	cd frontend && npx eslint .
-	cd frontend && npx tsc --noEmit
+	cd frontend && npm run format
+	cd frontend && npm run lint
+	cd frontend && npm run typecheck
 
 # Clean build artifacts
 clean:
