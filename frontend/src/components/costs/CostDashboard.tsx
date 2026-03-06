@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useAppSelector, useAppDispatch } from '../../hooks/useAppDispatch';
-import { fetchCosts, fetchConfig, fetchELBUsage } from '../../store/costSlice';
+import { fetchCosts, fetchConfig, fetchELBUsage, clearELBUsage } from '../../store/costSlice';
 import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
@@ -74,7 +74,10 @@ export const CostDashboard: React.FC = () => {
   // Fetch ELB usage when ELB tab is active
   useEffect(() => {
     if (activeTab === 'elb' && hasLoadedData && data?.loadBalancers?.length) {
-      dispatch(fetchELBUsage(usageWindow));
+      const promise = dispatch(fetchELBUsage(usageWindow));
+      const timer = setTimeout(() => dispatch(clearELBUsage()), 200);
+      promise.then(() => clearTimeout(timer));
+      return () => clearTimeout(timer);
     }
   }, [dispatch, activeTab, usageWindow, hasLoadedData, data?.loadBalancers?.length]);
 

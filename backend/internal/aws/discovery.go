@@ -1887,11 +1887,6 @@ func (d *Discovery) EnrichELBUsage(ctx context.Context, loadBalancers []types.Lo
 	usageEnd := now
 	usageStart := now.Add(-windowDuration)
 
-	d.logger.Info("enriching ELB usage",
-		"lbCount", len(loadBalancers),
-		"window", window,
-		"accountCount", len(accounts))
-
 	// Build account lookup by ID and name for role ARN resolution
 	accountByID := make(map[string]Account)
 	for _, acc := range accounts {
@@ -1966,13 +1961,6 @@ func (d *Discovery) EnrichELBUsage(ctx context.Context, loadBalancers []types.Lo
 					acc.Name = loadBalancers[indices[0]].AccountName
 				}
 			}
-			d.logger.Info("resolved account for CloudWatch",
-				"accountID", gk.accountID,
-				"region", gk.region,
-				"resolvedName", acc.Name,
-				"hasRoleARN", acc.RoleARN != "",
-				"lbCount", len(indices))
-
 			cfg, err := d.getConfigForAccount(ctx, acc, gk.region)
 			if err != nil {
 				mu.Lock()
@@ -2067,16 +2055,6 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 		},
 	}
 
-	d.logger.Info("fetching CloudWatch metrics",
-		"namespace", meta.namespace,
-		"dimensionName", meta.dimensionName,
-		"dimensionValue", meta.dimensionValue,
-		"volumeMetric", meta.volumeMetric,
-		"bandwidthMetric", meta.bandwidthMetric,
-		"start", start.Format(time.RFC3339),
-		"end", end.Format(time.RFC3339),
-		"period", period)
-
 	output, err := client.GetMetricData(ctx, input)
 	if err != nil {
 		d.logger.Warn("failed to get CloudWatch metrics",
@@ -2098,19 +2076,7 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 		if result.Id == nil {
 			continue
 		}
-		d.logger.Info("CloudWatch metric result",
-			"id", *result.Id,
-			"statusCode", result.StatusCode,
-			"datapointCount", len(result.Values),
-			"messageCount", len(result.Messages))
-		for _, msg := range result.Messages {
-			d.logger.Warn("CloudWatch message",
-				"id", *result.Id,
-				"code", aws.ToString(msg.Code),
-				"value", aws.ToString(msg.Value))
-		}
 		if result.StatusCode == cwtypes.StatusCodeInternalError {
-			d.logger.Warn("CloudWatch internal error for metric", "id", *result.Id)
 			continue
 		}
 		for _, v := range result.Values {
@@ -2123,12 +2089,6 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 			}
 		}
 	}
-
-	d.logger.Info("CloudWatch usage result",
-		"dimensionValue", meta.dimensionValue,
-		"volumeSum", volumeSum,
-		"bandwidthSum", bandwidthSum,
-		"hasData", hasData)
 
 	status := types.UsageStatusOK
 	usageErr := ""

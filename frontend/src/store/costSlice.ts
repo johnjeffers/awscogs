@@ -76,6 +76,21 @@ const costSlice = createSlice({
     setSelectedResources: (state, action: PayloadAction<string[]>) => {
       state.selectedResources = action.payload;
     },
+    clearELBUsage: (state) => {
+      if (state.data?.loadBalancers) {
+        for (const lb of state.data.loadBalancers) {
+          lb.usageStatus = undefined;
+          lb.usageError = undefined;
+          lb.requestVolume = undefined;
+          lb.bandwidthBytes = undefined;
+          lb.requestMetricName = undefined;
+          lb.bandwidthMetricName = undefined;
+          lb.usageWindow = undefined;
+          lb.usageStart = undefined;
+          lb.usageEnd = undefined;
+        }
+      }
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -112,5 +127,5 @@ const costSlice = createSlice({
   },
 });
 
-export const { setSelectedAccounts, setSelectedRegions, setSelectedResources } = costSlice.actions;
+export const { setSelectedAccounts, setSelectedRegions, setSelectedResources, clearELBUsage } = costSlice.actions;
 export default costSlice.reducer;
