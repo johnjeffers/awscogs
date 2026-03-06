@@ -111,3 +111,29 @@ AWS_PROFILE=profile_name backend/bin/awscogs
 The built app listens on port 8080.
 
 Open http://localhost:8080
+
+### Linting
+
+```sh
+make lint
+```
+
+This formats and lints both the backend (go fmt, go vet, staticcheck) and frontend (prettier, eslint, tsc).
+
+## Releasing
+
+Versions are derived from git tags matching `v*` and injected into the binary at build time.
+
+1. Tag the release:
+
+```sh
+git tag v0.x.x
+```
+
+2. Build the Docker image:
+
+```sh
+make docker-build
+```
+
+This produces images tagged `jjeffers/awscogs:v0.x.x` and `jjeffers/awscogs:latest`.
