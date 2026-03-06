@@ -189,17 +189,44 @@ const CostSubHeaders: React.FC = () => (
   </>
 );
 
-const TrafficSubHeaders: React.FC = () => (
-  <>
-    <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Requests</th>
-    <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Bandwidth</th>
-  </>
-);
+const SortableSubHeader: React.FC<{
+  label: string;
+  sortKey: string;
+  currentSort: SortConfig;
+  onSort: (key: string) => void;
+}> = ({ label, sortKey, currentSort, onSort }) => {
+  const isActive = currentSort.key === sortKey;
+  return (
+    <th
+      onClick={() => onSort(sortKey)}
+      className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider cursor-pointer hover:bg-gray-100 select-none whitespace-nowrap"
+    >
+      {label}
+      <SortIcon active={isActive} direction={isActive ? currentSort.direction : 'asc'} />
+    </th>
+  );
+};
+
+const NUMERIC_SORT_KEYS = new Set([
+  'hourlyCost', 'totalCost', 'size', 'desiredCount', 'runningCount',
+  'requestVolume', 'bandwidthBytes',
+]);
 
 function sortData<T>(data: T[], sortConfig: SortConfig): T[] {
+  const isNumeric = NUMERIC_SORT_KEYS.has(sortConfig.key);
   return [...data].sort((a, b) => {
-    const aVal = (a as Record<string, unknown>)[sortConfig.key];
-    const bVal = (b as Record<string, unknown>)[sortConfig.key];
+    let aVal = (a as Record<string, unknown>)[sortConfig.key];
+    let bVal = (b as Record<string, unknown>)[sortConfig.key];
+
+    // Treat missing numeric values as 0
+    if (isNumeric) {
+      if (aVal == null) aVal = 0;
+      if (bVal == null) bVal = 0;
+    } else {
+      if (aVal == null && bVal == null) return 0;
+      if (aVal == null) return 1;
+      if (bVal == null) return -1;
+    }
 
     let comparison = 0;
     if (typeof aVal === 'string' && typeof bVal === 'string') {
@@ -734,7 +761,8 @@ export const CostTable: React.FC<CostTableProps> = ({
               <CostGroupHeader sortKey="hourlyCost" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
             </tr>
             <tr>
-              <TrafficSubHeaders />
+              <SortableSubHeader label="Requests" sortKey="requestVolume" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
+              <SortableSubHeader label="Bandwidth" sortKey="bandwidthBytes" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
               <CostSubHeaders />
             </tr>
           </thead>

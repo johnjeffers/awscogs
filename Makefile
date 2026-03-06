@@ -1,4 +1,4 @@
-.PHONY: dev backend frontend build clean install vet update docker-build
+.PHONY: dev backend frontend build clean install vet lint update docker-build
 
 # Version info (auto-detected from git tags, can be overridden)
 IMAGE_NAME ?= jjeffers/awscogs
@@ -12,7 +12,7 @@ LDFLAGS = -X github.com/johnjeffers/awscogs/backend/internal/version.Version=$(V
           -X github.com/johnjeffers/awscogs/backend/internal/version.BuildTime=$(BUILD_TIME)
 
 # Run both backend and frontend for local development
-dev:
+dev: install
 	@trap 'kill 0' EXIT; \
 	$(MAKE) backend & \
 	$(MAKE) frontend & \
@@ -48,13 +48,22 @@ vet:
 	cd backend && go vet ./...
 	cd backend && staticcheck ./...
 
+# Format and lint both frontend and backend
+lint:
+	cd backend && go fmt ./...
+	cd backend && go vet ./...
+	cd backend && staticcheck ./...
+	cd frontend && npx eslint .
+	cd frontend && npx tsc --noEmit
+
 # Clean build artifacts
 clean:
 	rm -rf backend/bin
-	rm -rf frontend/dist
 	rm -rf backend/internal/api/dist
 	mkdir -p backend/internal/api/dist
 	touch backend/internal/api/dist/.gitkeep
+	rm -rf frontend/dist
+	rm -rf frontend/node_modules
 
 # Build Docker image
 docker-build:
