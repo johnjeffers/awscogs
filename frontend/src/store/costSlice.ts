@@ -33,37 +33,28 @@ const initialState: CostState = {
   dataVersion: 0,
 };
 
-export const fetchCosts = createAsyncThunk(
-  'costs/fetch',
-  async (_, { getState }) => {
-    const state = getState() as { costs: CostState };
-    const filters: CostFilters = {
-      accounts: state.costs.selectedAccounts.length > 0 ? state.costs.selectedAccounts : undefined,
-      regions: state.costs.selectedRegions.length > 0 ? state.costs.selectedRegions : undefined,
-      resources: state.costs.selectedResources.length > 0 ? state.costs.selectedResources : undefined,
-    };
-    return await costApi.getCosts(filters);
-  }
-);
+export const fetchCosts = createAsyncThunk('costs/fetch', async (_, { getState }) => {
+  const state = getState() as { costs: CostState };
+  const filters: CostFilters = {
+    accounts: state.costs.selectedAccounts.length > 0 ? state.costs.selectedAccounts : undefined,
+    regions: state.costs.selectedRegions.length > 0 ? state.costs.selectedRegions : undefined,
+    resources: state.costs.selectedResources.length > 0 ? state.costs.selectedResources : undefined,
+  };
+  return await costApi.getCosts(filters);
+});
 
-export const fetchELBUsage = createAsyncThunk(
-  'costs/fetchELBUsage',
-  async (usageWindow: string, { getState }) => {
-    const state = getState() as { costs: CostState };
-    const filters: CostFilters = {
-      accounts: state.costs.selectedAccounts.length > 0 ? state.costs.selectedAccounts : undefined,
-      regions: state.costs.selectedRegions.length > 0 ? state.costs.selectedRegions : undefined,
-    };
-    return await costApi.getELBCosts(filters, { includeUsage: true, usageWindow });
-  }
-);
+export const fetchELBUsage = createAsyncThunk('costs/fetchELBUsage', async (usageWindow: string, { getState }) => {
+  const state = getState() as { costs: CostState };
+  const filters: CostFilters = {
+    accounts: state.costs.selectedAccounts.length > 0 ? state.costs.selectedAccounts : undefined,
+    regions: state.costs.selectedRegions.length > 0 ? state.costs.selectedRegions : undefined,
+  };
+  return await costApi.getELBCosts(filters, { includeUsage: true, usageWindow });
+});
 
-export const fetchConfig = createAsyncThunk(
-  'costs/fetchConfig',
-  async () => {
-    return await configApi.getConfig();
-  }
-);
+export const fetchConfig = createAsyncThunk('costs/fetchConfig', async () => {
+  return await configApi.getConfig();
+});
 
 const costSlice = createSlice({
   name: 'costs',

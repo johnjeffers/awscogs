@@ -7,9 +7,8 @@ import { loadAppConfig, shouldExcludeAccount, shouldExcludeRegion } from '../../
 
 export const ResourceSelector: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { config, configLoading, configError, selectedAccounts, selectedRegions, selectedResources, loading } = useAppSelector(
-    (state) => state.costs
-  );
+  const { config, configLoading, configError, selectedAccounts, selectedRegions, selectedResources, loading } =
+    useAppSelector((state) => state.costs);
   const [appConfig, setAppConfig] = useState<Awaited<ReturnType<typeof loadAppConfig>>>({});
 
   useEffect(() => {
@@ -76,9 +75,7 @@ export const ResourceSelector: React.FC = () => {
     .sort((a, b) => a.name.localeCompare(b.name))
     .map((account) => ({
       value: account.name,
-      label: account.id && account.name !== account.id
-        ? ` ${account.name} (${account.id})`
-        : account.name,
+      label: account.id && account.name !== account.id ? ` ${account.name} (${account.id})` : account.name,
     }));
 
   const regionOptions = [...config.regions]
@@ -152,14 +149,7 @@ export const ResourceSelector: React.FC = () => {
             {loading ? (
               <>
                 <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  ></circle>
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                   <path
                     className="opacity-75"
                     fill="currentColor"

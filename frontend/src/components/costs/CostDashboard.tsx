@@ -5,7 +5,19 @@ import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
 
-type TabType = 'accounts' | 'regions' | 'ec2' | 'ebs' | 'ecs' | 'rds' | 'eks' | 'elb' | 'nat' | 'eip' | 'secrets' | 'publicipv4';
+type TabType =
+  | 'accounts'
+  | 'regions'
+  | 'ec2'
+  | 'ebs'
+  | 'ecs'
+  | 'rds'
+  | 'eks'
+  | 'elb'
+  | 'nat'
+  | 'eip'
+  | 'secrets'
+  | 'publicipv4';
 
 const allTabs: { id: TabType; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
@@ -24,7 +36,8 @@ const allTabs: { id: TabType; label: string }[] = [
 
 export const CostDashboard: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { data, loading, error, hasLoadedData, dataVersion, selectedAccounts, selectedRegions, selectedResources } = useAppSelector((state) => state.costs);
+  const { data, loading, error, hasLoadedData, dataVersion, selectedAccounts, selectedRegions, selectedResources } =
+    useAppSelector((state) => state.costs);
   const [activeTab, setActiveTab] = useState<TabType>('accounts');
   const [filter, setFilter] = useState('');
   const [usageWindow, setUsageWindow] = useState<'1h' | '24h' | '30d'>('1h');
@@ -59,9 +72,12 @@ export const CostDashboard: React.FC = () => {
         clearInterval(intervalRef.current);
       }
       // Auto-refresh every 5 minutes
-      intervalRef.current = setInterval(() => {
-        dispatch(fetchCosts());
-      }, 5 * 60 * 1000);
+      intervalRef.current = setInterval(
+        () => {
+          dispatch(fetchCosts());
+        },
+        5 * 60 * 1000,
+      );
     }
 
     return () => {
@@ -88,7 +104,10 @@ export const CostDashboard: React.FC = () => {
     const matchesFilter = (searchableFields: string[]): boolean => {
       if (!filter.trim()) return true;
 
-      const terms = filter.toLowerCase().split(/\s+/).filter(t => t);
+      const terms = filter
+        .toLowerCase()
+        .split(/\s+/)
+        .filter((t) => t);
       const combined = searchableFields.join(' ').toLowerCase();
 
       for (const term of terms) {
@@ -103,41 +122,37 @@ export const CostDashboard: React.FC = () => {
     };
 
     return {
-      accounts: data.accounts?.filter((a) =>
-        matchesFilter([a.accountName, a.accountId])
-      ),
-      regions: data.regions?.filter((r) =>
-        matchesFilter([r.region])
-      ),
+      accounts: data.accounts?.filter((a) => matchesFilter([a.accountName, a.accountId])),
+      regions: data.regions?.filter((r) => matchesFilter([r.region])),
       ec2: data.ec2Instances?.filter((inst) =>
-        matchesFilter([inst.name, inst.instanceId, inst.instanceType, inst.region, inst.accountName])
+        matchesFilter([inst.name, inst.instanceId, inst.instanceType, inst.region, inst.accountName]),
       ),
       ebs: data.ebsVolumes?.filter((vol) =>
-        matchesFilter([vol.name, vol.volumeId, vol.volumeType, vol.region, vol.accountName])
+        matchesFilter([vol.name, vol.volumeId, vol.volumeType, vol.region, vol.accountName]),
       ),
       ecs: data.ecsServices?.filter((svc) =>
-        matchesFilter([svc.serviceName, svc.clusterName, svc.launchType, svc.region, svc.accountName])
+        matchesFilter([svc.serviceName, svc.clusterName, svc.launchType, svc.region, svc.accountName]),
       ),
       rds: data.rdsInstances?.filter((inst) =>
-        matchesFilter([inst.name, inst.dbInstanceId, inst.engine, inst.instanceClass, inst.region, inst.accountName])
+        matchesFilter([inst.name, inst.dbInstanceId, inst.engine, inst.instanceClass, inst.region, inst.accountName]),
       ),
       eks: data.eksClusters?.filter((cluster) =>
-        matchesFilter([cluster.clusterName, cluster.version, cluster.status, cluster.region, cluster.accountName])
+        matchesFilter([cluster.clusterName, cluster.version, cluster.status, cluster.region, cluster.accountName]),
       ),
       elb: data.loadBalancers?.filter((lb) =>
-        matchesFilter([lb.name, lb.type, lb.scheme, lb.state, lb.region, lb.accountName])
+        matchesFilter([lb.name, lb.type, lb.scheme, lb.state, lb.region, lb.accountName]),
       ),
       nat: data.natGateways?.filter((nat) =>
-        matchesFilter([nat.name, nat.id, nat.state, nat.type, nat.vpcId, nat.region, nat.accountName])
+        matchesFilter([nat.name, nat.id, nat.state, nat.type, nat.vpcId, nat.region, nat.accountName]),
       ),
       eip: data.elasticIps?.filter((eip) =>
-        matchesFilter([eip.name, eip.publicIp, eip.allocationId, eip.instanceId, eip.region, eip.accountName])
+        matchesFilter([eip.name, eip.publicIp, eip.allocationId, eip.instanceId, eip.region, eip.accountName]),
       ),
       secrets: data.secrets?.filter((secret) =>
-        matchesFilter([secret.name, secret.description, secret.region, secret.accountName])
+        matchesFilter([secret.name, secret.description, secret.region, secret.accountName]),
       ),
       publicipv4: data.publicIpv4s?.filter((pip) =>
-        matchesFilter([pip.publicIp, pip.instanceId, pip.instanceName, pip.region, pip.accountName])
+        matchesFilter([pip.publicIp, pip.instanceId, pip.instanceName, pip.region, pip.accountName]),
       ),
     };
   }, [data, filter]);
@@ -145,18 +160,30 @@ export const CostDashboard: React.FC = () => {
   const getTabCount = (tab: TabType): { filtered: number; total: number } => {
     if (!data) return { filtered: 0, total: 0 };
     switch (tab) {
-      case 'accounts': return { filtered: filteredData?.accounts?.length || 0, total: data.accounts?.length || 0 };
-      case 'regions': return { filtered: filteredData?.regions?.length || 0, total: data.regions?.length || 0 };
-      case 'ec2': return { filtered: filteredData?.ec2?.length || 0, total: data.ec2Instances?.length || 0 };
-      case 'ebs': return { filtered: filteredData?.ebs?.length || 0, total: data.ebsVolumes?.length || 0 };
-      case 'ecs': return { filtered: filteredData?.ecs?.length || 0, total: data.ecsServices?.length || 0 };
-      case 'rds': return { filtered: filteredData?.rds?.length || 0, total: data.rdsInstances?.length || 0 };
-      case 'eks': return { filtered: filteredData?.eks?.length || 0, total: data.eksClusters?.length || 0 };
-      case 'elb': return { filtered: filteredData?.elb?.length || 0, total: data.loadBalancers?.length || 0 };
-      case 'nat': return { filtered: filteredData?.nat?.length || 0, total: data.natGateways?.length || 0 };
-      case 'eip': return { filtered: filteredData?.eip?.length || 0, total: data.elasticIps?.length || 0 };
-      case 'secrets': return { filtered: filteredData?.secrets?.length || 0, total: data.secrets?.length || 0 };
-      case 'publicipv4': return { filtered: filteredData?.publicipv4?.length || 0, total: data.publicIpv4s?.length || 0 };
+      case 'accounts':
+        return { filtered: filteredData?.accounts?.length || 0, total: data.accounts?.length || 0 };
+      case 'regions':
+        return { filtered: filteredData?.regions?.length || 0, total: data.regions?.length || 0 };
+      case 'ec2':
+        return { filtered: filteredData?.ec2?.length || 0, total: data.ec2Instances?.length || 0 };
+      case 'ebs':
+        return { filtered: filteredData?.ebs?.length || 0, total: data.ebsVolumes?.length || 0 };
+      case 'ecs':
+        return { filtered: filteredData?.ecs?.length || 0, total: data.ecsServices?.length || 0 };
+      case 'rds':
+        return { filtered: filteredData?.rds?.length || 0, total: data.rdsInstances?.length || 0 };
+      case 'eks':
+        return { filtered: filteredData?.eks?.length || 0, total: data.eksClusters?.length || 0 };
+      case 'elb':
+        return { filtered: filteredData?.elb?.length || 0, total: data.loadBalancers?.length || 0 };
+      case 'nat':
+        return { filtered: filteredData?.nat?.length || 0, total: data.natGateways?.length || 0 };
+      case 'eip':
+        return { filtered: filteredData?.eip?.length || 0, total: data.elasticIps?.length || 0 };
+      case 'secrets':
+        return { filtered: filteredData?.secrets?.length || 0, total: data.secrets?.length || 0 };
+      case 'publicipv4':
+        return { filtered: filteredData?.publicipv4?.length || 0, total: data.publicIpv4s?.length || 0 };
     }
   };
 
@@ -170,10 +197,17 @@ export const CostDashboard: React.FC = () => {
   const totals = useMemo(() => {
     if (!data) return { cost: 0, count: 0 };
     const cost = data.totalCost;
-    const count = (data.ec2Instances?.length || 0) + (data.ebsVolumes?.length || 0) +
-      (data.ecsServices?.length || 0) + (data.rdsInstances?.length || 0) + (data.eksClusters?.length || 0) +
-      (data.loadBalancers?.length || 0) + (data.natGateways?.length || 0) + (data.elasticIps?.length || 0) +
-      (data.secrets?.length || 0) + (data.publicIpv4s?.length || 0);
+    const count =
+      (data.ec2Instances?.length || 0) +
+      (data.ebsVolumes?.length || 0) +
+      (data.ecsServices?.length || 0) +
+      (data.rdsInstances?.length || 0) +
+      (data.eksClusters?.length || 0) +
+      (data.loadBalancers?.length || 0) +
+      (data.natGateways?.length || 0) +
+      (data.elasticIps?.length || 0) +
+      (data.secrets?.length || 0) +
+      (data.publicIpv4s?.length || 0);
     return { cost, count };
   }, [data]);
 
@@ -188,30 +222,64 @@ export const CostDashboard: React.FC = () => {
 
     // For accounts/regions tabs, sum all filtered resource types
     if (!isResourceTab) {
-      const cost = sumCost(filteredData.ec2) + sumCost(filteredData.ebs) + sumCost(filteredData.ecs) +
-        sumCost(filteredData.rds) + sumCost(filteredData.eks) + sumCost(filteredData.elb) +
-        sumCost(filteredData.nat) + sumCost(filteredData.eip) + sumCost(filteredData.secrets) +
+      const cost =
+        sumCost(filteredData.ec2) +
+        sumCost(filteredData.ebs) +
+        sumCost(filteredData.ecs) +
+        sumCost(filteredData.rds) +
+        sumCost(filteredData.eks) +
+        sumCost(filteredData.elb) +
+        sumCost(filteredData.nat) +
+        sumCost(filteredData.eip) +
+        sumCost(filteredData.secrets) +
         sumCost(filteredData.publicipv4);
-      const count = (filteredData.ec2?.length || 0) + (filteredData.ebs?.length || 0) +
-        (filteredData.ecs?.length || 0) + (filteredData.rds?.length || 0) + (filteredData.eks?.length || 0) +
-        (filteredData.elb?.length || 0) + (filteredData.nat?.length || 0) + (filteredData.eip?.length || 0) +
-        (filteredData.secrets?.length || 0) + (filteredData.publicipv4?.length || 0);
+      const count =
+        (filteredData.ec2?.length || 0) +
+        (filteredData.ebs?.length || 0) +
+        (filteredData.ecs?.length || 0) +
+        (filteredData.rds?.length || 0) +
+        (filteredData.eks?.length || 0) +
+        (filteredData.elb?.length || 0) +
+        (filteredData.nat?.length || 0) +
+        (filteredData.eip?.length || 0) +
+        (filteredData.secrets?.length || 0) +
+        (filteredData.publicipv4?.length || 0);
       return { cost, count };
     }
 
     // For specific resource tabs, show only that resource type's data
     let items: { hourlyCost: number }[] | undefined;
     switch (activeTab) {
-      case 'ec2': items = filteredData.ec2; break;
-      case 'ebs': items = filteredData.ebs; break;
-      case 'ecs': items = filteredData.ecs; break;
-      case 'rds': items = filteredData.rds; break;
-      case 'eks': items = filteredData.eks; break;
-      case 'elb': items = filteredData.elb; break;
-      case 'nat': items = filteredData.nat; break;
-      case 'eip': items = filteredData.eip; break;
-      case 'secrets': items = filteredData.secrets; break;
-      case 'publicipv4': items = filteredData.publicipv4; break;
+      case 'ec2':
+        items = filteredData.ec2;
+        break;
+      case 'ebs':
+        items = filteredData.ebs;
+        break;
+      case 'ecs':
+        items = filteredData.ecs;
+        break;
+      case 'rds':
+        items = filteredData.rds;
+        break;
+      case 'eks':
+        items = filteredData.eks;
+        break;
+      case 'elb':
+        items = filteredData.elb;
+        break;
+      case 'nat':
+        items = filteredData.nat;
+        break;
+      case 'eip':
+        items = filteredData.eip;
+        break;
+      case 'secrets':
+        items = filteredData.secrets;
+        break;
+      case 'publicipv4':
+        items = filteredData.publicipv4;
+        break;
     }
 
     return { cost: sumCost(items), count: items?.length || 0 };
@@ -221,10 +289,13 @@ export const CostDashboard: React.FC = () => {
     if (!selectedResources.includes('elb')) return undefined;
     const sumTraffic = (lbs: typeof filteredData extends null ? never : NonNullable<typeof filteredData>['elb']) => {
       if (!lbs) return { requests: 0, bandwidth: 0 };
-      return lbs.reduce((acc, lb) => ({
-        requests: acc.requests + (lb.requestVolume || 0),
-        bandwidth: acc.bandwidth + (lb.bandwidthBytes || 0),
-      }), { requests: 0, bandwidth: 0 });
+      return lbs.reduce(
+        (acc, lb) => ({
+          requests: acc.requests + (lb.requestVolume || 0),
+          bandwidth: acc.bandwidth + (lb.bandwidthBytes || 0),
+        }),
+        { requests: 0, bandwidth: 0 },
+      );
     };
 
     const total = sumTraffic(data?.loadBalancers);
@@ -261,12 +332,19 @@ export const CostDashboard: React.FC = () => {
           { key: 'eipCount', label: 'EIP', id: 'eip' },
           { key: 'secretCount', label: 'Secrets', id: 'secrets' },
           { key: 'publicIpv4Count', label: 'IPv4', id: 'publicipv4' },
-        ].filter(c => selectedResources.includes(c.id));
-        headers = ['Account ID', 'Account Name', ...countCols.map(c => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.accounts || []).map(a => [
+        ].filter((c) => selectedResources.includes(c.id));
+        headers = [
+          'Account ID',
+          'Account Name',
+          ...countCols.map((c) => c.label),
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.accounts || []).map((a) => [
           a.accountId,
           a.accountName,
-          ...countCols.map(c => String((a as Record<string, unknown>)[c.key])),
+          ...countCols.map((c) => String((a as Record<string, unknown>)[c.key])),
           a.totalCost.toFixed(4),
           dailyCost(a.totalCost).toFixed(2),
           monthlyCost(a.totalCost).toFixed(2),
@@ -285,11 +363,11 @@ export const CostDashboard: React.FC = () => {
           { key: 'eipCount', label: 'EIP', id: 'eip' },
           { key: 'secretCount', label: 'Secrets', id: 'secrets' },
           { key: 'publicIpv4Count', label: 'IPv4', id: 'publicipv4' },
-        ].filter(c => selectedResources.includes(c.id));
-        headers = ['Region', ...countCols.map(c => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.regions || []).map(r => [
+        ].filter((c) => selectedResources.includes(c.id));
+        headers = ['Region', ...countCols.map((c) => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
+        rows = (filteredData.regions || []).map((r) => [
           r.region,
-          ...countCols.map(c => String((r as Record<string, unknown>)[c.key])),
+          ...countCols.map((c) => String((r as Record<string, unknown>)[c.key])),
           r.totalCost.toFixed(4),
           dailyCost(r.totalCost).toFixed(2),
           monthlyCost(r.totalCost).toFixed(2),
@@ -297,8 +375,18 @@ export const CostDashboard: React.FC = () => {
         break;
       }
       case 'ec2':
-        headers = ['Account', 'Region', 'Name', 'Instance ID', 'Type', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.ec2 || []).map(inst => [
+        headers = [
+          'Account',
+          'Region',
+          'Name',
+          'Instance ID',
+          'Type',
+          'State',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.ec2 || []).map((inst) => [
           inst.accountName || inst.accountId,
           inst.region,
           inst.name,
@@ -311,8 +399,19 @@ export const CostDashboard: React.FC = () => {
         ]);
         break;
       case 'ebs':
-        headers = ['Account', 'Region', 'Name', 'Volume ID', 'Type', 'Size (GiB)', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.ebs || []).map(vol => [
+        headers = [
+          'Account',
+          'Region',
+          'Name',
+          'Volume ID',
+          'Type',
+          'Size (GiB)',
+          'State',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.ebs || []).map((vol) => [
           vol.accountName || vol.accountId,
           vol.region,
           vol.name,
@@ -326,8 +425,20 @@ export const CostDashboard: React.FC = () => {
         ]);
         break;
       case 'ecs':
-        headers = ['Account', 'Region', 'Cluster', 'Service', 'Launch Type', 'Desired', 'Running', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.ecs || []).map(svc => [
+        headers = [
+          'Account',
+          'Region',
+          'Cluster',
+          'Service',
+          'Launch Type',
+          'Desired',
+          'Running',
+          'State',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.ecs || []).map((svc) => [
           svc.accountName || svc.accountId,
           svc.region,
           svc.clusterName,
@@ -342,8 +453,19 @@ export const CostDashboard: React.FC = () => {
         ]);
         break;
       case 'rds':
-        headers = ['Account', 'Region', 'Name', 'Engine', 'Class', 'Multi-AZ', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.rds || []).map(inst => [
+        headers = [
+          'Account',
+          'Region',
+          'Name',
+          'Engine',
+          'Class',
+          'Multi-AZ',
+          'State',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.rds || []).map((inst) => [
           inst.accountName || inst.accountId,
           inst.region,
           inst.name,
@@ -357,8 +479,18 @@ export const CostDashboard: React.FC = () => {
         ]);
         break;
       case 'eks':
-        headers = ['Account', 'Region', 'Cluster', 'Status', 'Version', 'Platform', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.eks || []).map(cluster => [
+        headers = [
+          'Account',
+          'Region',
+          'Cluster',
+          'Status',
+          'Version',
+          'Platform',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.eks || []).map((cluster) => [
           cluster.accountName || cluster.accountId,
           cluster.region,
           cluster.clusterName,
@@ -373,17 +505,23 @@ export const CostDashboard: React.FC = () => {
       case 'elb': {
         const hasUsage = (filteredData.elb || [])[0]?.usageStatus !== undefined;
         headers = hasUsage
-          ? ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Requests', 'Bandwidth (bytes)', 'Usage Status', 'Hourly Cost', 'Daily Cost', 'Monthly Cost']
+          ? [
+              'Account',
+              'Region',
+              'Name',
+              'Type',
+              'Scheme',
+              'State',
+              'Requests',
+              'Bandwidth (bytes)',
+              'Usage Status',
+              'Hourly Cost',
+              'Daily Cost',
+              'Monthly Cost',
+            ]
           : ['Account', 'Region', 'Name', 'Type', 'Scheme', 'State', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.elb || []).map(lb => {
-          const base = [
-            lb.accountName || lb.accountId,
-            lb.region,
-            lb.name,
-            lb.type,
-            lb.scheme,
-            lb.state,
-          ];
+        rows = (filteredData.elb || []).map((lb) => {
+          const base = [lb.accountName || lb.accountId, lb.region, lb.name, lb.type, lb.scheme, lb.state];
           if (hasUsage) {
             base.push(
               String(Math.round(lb.requestVolume || 0)),
@@ -401,8 +539,19 @@ export const CostDashboard: React.FC = () => {
         break;
       }
       case 'nat':
-        headers = ['Account', 'Region', 'Name', 'ID', 'State', 'Type', 'VPC ID', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.nat || []).map(nat => [
+        headers = [
+          'Account',
+          'Region',
+          'Name',
+          'ID',
+          'State',
+          'Type',
+          'VPC ID',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.nat || []).map((nat) => [
           nat.accountName || nat.accountId,
           nat.region,
           nat.name,
@@ -416,8 +565,19 @@ export const CostDashboard: React.FC = () => {
         ]);
         break;
       case 'eip':
-        headers = ['Account', 'Region', 'Name', 'Public IP', 'Allocation ID', 'Associated', 'Instance ID', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.eip || []).map(eip => [
+        headers = [
+          'Account',
+          'Region',
+          'Name',
+          'Public IP',
+          'Allocation ID',
+          'Associated',
+          'Instance ID',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.eip || []).map((eip) => [
           eip.accountName || eip.accountId,
           eip.region,
           eip.name,
@@ -432,7 +592,7 @@ export const CostDashboard: React.FC = () => {
         break;
       case 'secrets':
         headers = ['Account', 'Region', 'Name', 'Description', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.secrets || []).map(secret => [
+        rows = (filteredData.secrets || []).map((secret) => [
           secret.accountName || secret.accountId,
           secret.region,
           secret.name,
@@ -443,8 +603,17 @@ export const CostDashboard: React.FC = () => {
         ]);
         break;
       case 'publicipv4':
-        headers = ['Account', 'Region', 'Public IP', 'Instance ID', 'Instance Name', 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
-        rows = (filteredData.publicipv4 || []).map(pip => [
+        headers = [
+          'Account',
+          'Region',
+          'Public IP',
+          'Instance ID',
+          'Instance Name',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.publicipv4 || []).map((pip) => [
           pip.accountName || pip.accountId,
           pip.region,
           pip.publicIp,
@@ -464,10 +633,9 @@ export const CostDashboard: React.FC = () => {
       return value;
     };
 
-    const csvContent = [
-      headers.map(escapeCSV).join(','),
-      ...rows.map(row => row.map(escapeCSV).join(','))
-    ].join('\n');
+    const csvContent = [headers.map(escapeCSV).join(','), ...rows.map((row) => row.map(escapeCSV).join(','))].join(
+      '\n',
+    );
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -491,7 +659,11 @@ export const CostDashboard: React.FC = () => {
           <div className="flex">
             <div className="flex-shrink-0">
               <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                  clipRule="evenodd"
+                />
               </svg>
             </div>
             <div className="ml-3">
@@ -538,11 +710,11 @@ export const CostDashboard: React.FC = () => {
                       }`}
                     >
                       {tab.label}
-                      <span className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
-                        activeTab === tab.id
-                          ? 'bg-blue-100 text-blue-600'
-                          : 'bg-gray-100 text-gray-500'
-                      }`}>
+                      <span
+                        className={`ml-2 py-0.5 px-2 rounded-full text-xs ${
+                          activeTab === tab.id ? 'bg-blue-100 text-blue-600' : 'bg-gray-100 text-gray-500'
+                        }`}
+                      >
                         {formatTabCount(tab.id)}
                       </span>
                     </button>
@@ -554,7 +726,12 @@ export const CostDashboard: React.FC = () => {
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                        />
                       </svg>
                     </div>
                     <input
@@ -569,7 +746,12 @@ export const CostDashboard: React.FC = () => {
                         onClick={() => setFilter('')}
                         className="absolute inset-y-0 right-0 pr-3 flex items-center"
                       >
-                        <svg className="h-4 w-4 text-gray-400 hover:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg
+                          className="h-4 w-4 text-gray-400 hover:text-gray-600"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                        >
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                         </svg>
                       </button>
@@ -580,7 +762,12 @@ export const CostDashboard: React.FC = () => {
                     className="px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-1"
                   >
                     <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
                     </svg>
                     Export CSV
                   </button>
@@ -596,41 +783,22 @@ export const CostDashboard: React.FC = () => {
               {activeTab === 'regions' && (
                 <CostTable regions={filteredData?.regions} selectedResources={selectedResources} />
               )}
-              {activeTab === 'ec2' && (
-                <CostTable ec2={filteredData?.ec2} />
-              )}
-              {activeTab === 'ebs' && (
-                <CostTable ebs={filteredData?.ebs} />
-              )}
-              {activeTab === 'ecs' && (
-                <CostTable ecs={filteredData?.ecs} />
-              )}
-              {activeTab === 'rds' && (
-                <CostTable rds={filteredData?.rds} />
-              )}
-              {activeTab === 'eks' && (
-                <CostTable eks={filteredData?.eks} />
-              )}
+              {activeTab === 'ec2' && <CostTable ec2={filteredData?.ec2} />}
+              {activeTab === 'ebs' && <CostTable ebs={filteredData?.ebs} />}
+              {activeTab === 'ecs' && <CostTable ecs={filteredData?.ecs} />}
+              {activeTab === 'rds' && <CostTable rds={filteredData?.rds} />}
+              {activeTab === 'eks' && <CostTable eks={filteredData?.eks} />}
               {activeTab === 'elb' && (
                 <CostTable elb={filteredData?.elb} usageWindow={usageWindow} onUsageWindowChange={setUsageWindow} />
               )}
-              {activeTab === 'nat' && (
-                <CostTable nat={filteredData?.nat} />
-              )}
-              {activeTab === 'eip' && (
-                <CostTable eip={filteredData?.eip} />
-              )}
-              {activeTab === 'secrets' && (
-                <CostTable secrets={filteredData?.secrets} />
-              )}
-              {activeTab === 'publicipv4' && (
-                <CostTable publicipv4={filteredData?.publicipv4} />
-              )}
+              {activeTab === 'nat' && <CostTable nat={filteredData?.nat} />}
+              {activeTab === 'eip' && <CostTable eip={filteredData?.eip} />}
+              {activeTab === 'secrets' && <CostTable secrets={filteredData?.secrets} />}
+              {activeTab === 'publicipv4' && <CostTable publicipv4={filteredData?.publicipv4} />}
             </div>
           </div>
         </>
       )}
-
     </div>
   );
 };

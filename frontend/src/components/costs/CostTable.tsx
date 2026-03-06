@@ -1,5 +1,18 @@
 import React, { useState, useMemo } from 'react';
-import type { AccountSummary, RegionSummary, EC2Instance, EBSVolume, ECSService, RDSInstance, EKSCluster, LoadBalancer, NATGateway, ElasticIP, Secret, PublicIPv4 } from '../../types/cost';
+import type {
+  AccountSummary,
+  RegionSummary,
+  EC2Instance,
+  EBSVolume,
+  ECSService,
+  RDSInstance,
+  EKSCluster,
+  LoadBalancer,
+  NATGateway,
+  ElasticIP,
+  Secret,
+  PublicIPv4,
+} from '../../types/cost';
 
 interface CostTableProps {
   accounts?: AccountSummary[];
@@ -40,7 +53,7 @@ interface SortConfig {
 }
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 'All'] as const;
-type PageSize = typeof PAGE_SIZE_OPTIONS[number];
+type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
 
 interface PaginationProps {
   currentPage: number;
@@ -50,7 +63,13 @@ interface PaginationProps {
   onPageSizeChange: (size: PageSize) => void;
 }
 
-const Pagination: React.FC<PaginationProps> = ({ currentPage, totalItems, pageSize, onPageChange, onPageSizeChange }) => {
+const Pagination: React.FC<PaginationProps> = ({
+  currentPage,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+}) => {
   const effectivePageSize = pageSize === 'All' ? totalItems : pageSize;
   const totalPages = Math.ceil(totalItems / effectivePageSize);
   const isAllSelected = pageSize === 'All';
@@ -62,15 +81,19 @@ const Pagination: React.FC<PaginationProps> = ({ currentPage, totalItems, pageSi
     <div className="flex items-center justify-between px-6 py-3 bg-gray-50 border-t border-gray-200">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2">
-          <label htmlFor="pageSize" className="text-sm text-gray-500">Rows per page:</label>
+          <label htmlFor="pageSize" className="text-sm text-gray-500">
+            Rows per page:
+          </label>
           <select
             id="pageSize"
             value={pageSize}
-            onChange={(e) => onPageSizeChange(e.target.value === 'All' ? 'All' : Number(e.target.value) as PageSize)}
+            onChange={(e) => onPageSizeChange(e.target.value === 'All' ? 'All' : (Number(e.target.value) as PageSize))}
             className="text-sm border border-gray-300 rounded px-2 py-1 bg-white"
           >
             {PAGE_SIZE_OPTIONS.map((option) => (
-              <option key={option} value={option}>{option}</option>
+              <option key={option} value={option}>
+                {option}
+              </option>
             ))}
           </select>
         </div>
@@ -125,11 +148,7 @@ function paginate<T>(data: T[], page: number, pageSize: PageSize): T[] {
 
 const SortIcon: React.FC<{ active: boolean; direction: SortDirection }> = ({ active, direction }) => {
   if (!active) return null;
-  return (
-    <span className="ml-1 inline-block text-blue-600">
-      {direction === 'asc' ? '▲' : '▼'}
-    </span>
-  );
+  return <span className="ml-1 inline-block text-blue-600">{direction === 'asc' ? '▲' : '▼'}</span>;
 };
 
 const SortableHeader: React.FC<{
@@ -208,8 +227,13 @@ const SortableSubHeader: React.FC<{
 };
 
 const NUMERIC_SORT_KEYS = new Set([
-  'hourlyCost', 'totalCost', 'size', 'desiredCount', 'runningCount',
-  'requestVolume', 'bandwidthBytes',
+  'hourlyCost',
+  'totalCost',
+  'size',
+  'desiredCount',
+  'runningCount',
+  'requestVolume',
+  'bandwidthBytes',
 ]);
 
 function sortData<T>(data: T[], sortConfig: SortConfig): T[] {
@@ -258,7 +282,7 @@ export const CostTable: React.FC<CostTableProps> = ({
 }) => {
   const visibleColumns = useMemo(() => {
     if (!selectedResources?.length) return SUMMARY_RESOURCE_COLUMNS;
-    return SUMMARY_RESOURCE_COLUMNS.filter(col => selectedResources.includes(col.id));
+    return SUMMARY_RESOURCE_COLUMNS.filter((col) => selectedResources.includes(col.id));
   }, [selectedResources]);
   const [accountSort, setAccountSort] = useState<SortConfig>({ key: 'accountName', direction: 'asc' });
   const [regionSort, setRegionSort] = useState<SortConfig>({ key: 'region', direction: 'asc' });
@@ -297,7 +321,7 @@ export const CostTable: React.FC<CostTableProps> = ({
     setter: React.Dispatch<React.SetStateAction<SortConfig>>,
     current: SortConfig,
     key: string,
-    resetPage: () => void
+    resetPage: () => void,
   ) => {
     setter({
       key,
@@ -399,11 +423,29 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} />
-              {visibleColumns.map(col => (
-                <SortableHeader key={col.id} label={col.label} sortKey={col.countKey} currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} rowSpan={2} align="right" />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={accountSort}
+                onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))}
+                rowSpan={2}
+              />
+              {visibleColumns.map((col) => (
+                <SortableHeader
+                  key={col.id}
+                  label={col.label}
+                  sortKey={col.countKey}
+                  currentSort={accountSort}
+                  onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))}
+                  rowSpan={2}
+                  align="right"
+                />
               ))}
-              <CostGroupHeader sortKey="totalCost" currentSort={accountSort} onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))} />
+              <CostGroupHeader
+                sortKey="totalCost"
+                currentSort={accountSort}
+                onSort={(k) => handleSort(setAccountSort, accountSort, k, () => setAccountPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -412,18 +454,34 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedAccounts.map((account) => (
               <tr key={account.accountId}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{account.accountName || account.accountId}</td>
-                {visibleColumns.map(col => (
-                  <td key={col.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{(account as Record<string, unknown>)[col.countKey] as number}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  {account.accountName || account.accountId}
+                </td>
+                {visibleColumns.map((col) => (
+                  <td key={col.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                    {(account as Record<string, unknown>)[col.countKey] as number}
+                  </td>
                 ))}
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(account.totalCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(account.totalCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(account.totalCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(account.totalCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(account.totalCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(account.totalCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={accountPage} totalItems={sortedAccounts.length} pageSize={pageSize} onPageChange={setAccountPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setAccountPage(1))} />
+        <Pagination
+          currentPage={accountPage}
+          totalItems={sortedAccounts.length}
+          pageSize={pageSize}
+          onPageChange={setAccountPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setAccountPage(1))}
+        />
       </div>
     );
   }
@@ -436,11 +494,29 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Region" sortKey="region" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} />
-              {visibleColumns.map(col => (
-                <SortableHeader key={col.id} label={col.label} sortKey={col.countKey} currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} rowSpan={2} align="right" />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={regionSort}
+                onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))}
+                rowSpan={2}
+              />
+              {visibleColumns.map((col) => (
+                <SortableHeader
+                  key={col.id}
+                  label={col.label}
+                  sortKey={col.countKey}
+                  currentSort={regionSort}
+                  onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))}
+                  rowSpan={2}
+                  align="right"
+                />
               ))}
-              <CostGroupHeader sortKey="totalCost" currentSort={regionSort} onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))} />
+              <CostGroupHeader
+                sortKey="totalCost"
+                currentSort={regionSort}
+                onSort={(k) => handleSort(setRegionSort, regionSort, k, () => setRegionPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -450,17 +526,31 @@ export const CostTable: React.FC<CostTableProps> = ({
             {paginatedRegions.map((region) => (
               <tr key={region.region}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{region.region}</td>
-                {visibleColumns.map(col => (
-                  <td key={col.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{(region as Record<string, unknown>)[col.countKey] as number}</td>
+                {visibleColumns.map((col) => (
+                  <td key={col.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                    {(region as Record<string, unknown>)[col.countKey] as number}
+                  </td>
                 ))}
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(region.totalCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(region.totalCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(region.totalCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(region.totalCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(region.totalCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(region.totalCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={regionPage} totalItems={sortedRegions.length} pageSize={pageSize} onPageChange={setRegionPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setRegionPage(1))} />
+        <Pagination
+          currentPage={regionPage}
+          totalItems={sortedRegions.length}
+          pageSize={pageSize}
+          onPageChange={setRegionPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setRegionPage(1))}
+        />
       </div>
     );
   }
@@ -473,13 +563,53 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} rowSpan={2} />
-              <SortableHeader label="Instance ID" sortKey="instanceId" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} rowSpan={2} />
-              <SortableHeader label="Type" sortKey="instanceType" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} rowSpan={2} />
-              <SortableHeader label="State" sortKey="state" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={ec2Sort} onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Instance ID"
+                sortKey="instanceId"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Type"
+                sortKey="instanceType"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="State"
+                sortKey="state"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={ec2Sort}
+                onSort={(k) => handleSort(setEc2Sort, ec2Sort, k, () => setEc2Page(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -488,28 +618,46 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedEc2.map((inst) => (
               <tr key={inst.instanceId}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.accountName || inst.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {inst.accountName || inst.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{inst.name || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.instanceId}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.instanceType}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    inst.state === 'running' ? 'bg-green-100 text-green-800' :
-                    inst.state === 'stopped' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      inst.state === 'running'
+                        ? 'bg-green-100 text-green-800'
+                        : inst.state === 'stopped'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {inst.state}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(inst.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(inst.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(inst.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(inst.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(inst.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(inst.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={ec2Page} totalItems={sortedEc2.length} pageSize={pageSize} onPageChange={setEc2Page} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEc2Page(1))} />
+        <Pagination
+          currentPage={ec2Page}
+          totalItems={sortedEc2.length}
+          pageSize={pageSize}
+          onPageChange={setEc2Page}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setEc2Page(1))}
+        />
       </div>
     );
   }
@@ -522,14 +670,61 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} />
-              <SortableHeader label="Volume ID" sortKey="volumeId" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} />
-              <SortableHeader label="Type" sortKey="volumeType" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} />
-              <SortableHeader label="Size (GiB)" sortKey="size" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} align="right" />
-              <SortableHeader label="State" sortKey="state" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={ebsSort} onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Volume ID"
+                sortKey="volumeId"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Type"
+                sortKey="volumeType"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Size (GiB)"
+                sortKey="size"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+                align="right"
+              />
+              <SortableHeader
+                label="State"
+                sortKey="state"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={ebsSort}
+                onSort={(k) => handleSort(setEbsSort, ebsSort, k, () => setEbsPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -538,29 +733,47 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedEbs.map((vol) => (
               <tr key={vol.volumeId}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vol.accountName || vol.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {vol.accountName || vol.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vol.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{vol.name || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vol.volumeId}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{vol.volumeType}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{vol.size}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    vol.state === 'in-use' ? 'bg-green-100 text-green-800' :
-                    vol.state === 'available' ? 'bg-blue-100 text-blue-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      vol.state === 'in-use'
+                        ? 'bg-green-100 text-green-800'
+                        : vol.state === 'available'
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {vol.state}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(vol.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(vol.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(vol.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(vol.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(vol.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(vol.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={ebsPage} totalItems={sortedEbs.length} pageSize={pageSize} onPageChange={setEbsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEbsPage(1))} />
+        <Pagination
+          currentPage={ebsPage}
+          totalItems={sortedEbs.length}
+          pageSize={pageSize}
+          onPageChange={setEbsPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setEbsPage(1))}
+        />
       </div>
     );
   }
@@ -573,15 +786,69 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} />
-              <SortableHeader label="Cluster" sortKey="clusterName" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} />
-              <SortableHeader label="Service" sortKey="serviceName" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} />
-              <SortableHeader label="Launch Type" sortKey="launchType" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} />
-              <SortableHeader label="Desired" sortKey="desiredCount" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} align="right" />
-              <SortableHeader label="Running" sortKey="runningCount" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} align="right" />
-              <SortableHeader label="State" sortKey="state" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={ecsSort} onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Cluster"
+                sortKey="clusterName"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Service"
+                sortKey="serviceName"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Launch Type"
+                sortKey="launchType"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Desired"
+                sortKey="desiredCount"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+                align="right"
+              />
+              <SortableHeader
+                label="Running"
+                sortKey="runningCount"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+                align="right"
+              />
+              <SortableHeader
+                label="State"
+                sortKey="state"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={ecsSort}
+                onSort={(k) => handleSort(setEcsSort, ecsSort, k, () => setEcsPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -590,7 +857,9 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedEcs.map((svc) => (
               <tr key={`${svc.clusterName}-${svc.serviceName}`}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{svc.accountName || svc.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {svc.accountName || svc.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{svc.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{svc.clusterName}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{svc.serviceName}</td>
@@ -598,22 +867,38 @@ export const CostTable: React.FC<CostTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{svc.desiredCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">{svc.runningCount}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    svc.state === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                    svc.state === 'DRAINING' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      svc.state === 'ACTIVE'
+                        ? 'bg-green-100 text-green-800'
+                        : svc.state === 'DRAINING'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {svc.state}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(svc.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(svc.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(svc.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(svc.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(svc.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(svc.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={ecsPage} totalItems={sortedEcs.length} pageSize={pageSize} onPageChange={setEcsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEcsPage(1))} />
+        <Pagination
+          currentPage={ecsPage}
+          totalItems={sortedEcs.length}
+          pageSize={pageSize}
+          onPageChange={setEcsPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setEcsPage(1))}
+        />
       </div>
     );
   }
@@ -626,14 +911,60 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <SortableHeader label="Engine" sortKey="engine" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <SortableHeader label="Class" sortKey="instanceClass" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <SortableHeader label="Multi-AZ" sortKey="multiAz" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <SortableHeader label="State" sortKey="state" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={rdsSort} onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Engine"
+                sortKey="engine"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Class"
+                sortKey="instanceClass"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Multi-AZ"
+                sortKey="multiAz"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="State"
+                sortKey="state"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={rdsSort}
+                onSort={(k) => handleSort(setRdsSort, rdsSort, k, () => setRdsPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -642,29 +973,47 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedRds.map((inst) => (
               <tr key={inst.dbInstanceId}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.accountName || inst.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {inst.accountName || inst.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{inst.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.engine}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.instanceClass}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{inst.multiAz ? 'Yes' : 'No'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    inst.state === 'available' ? 'bg-green-100 text-green-800' :
-                    inst.state === 'stopped' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      inst.state === 'available'
+                        ? 'bg-green-100 text-green-800'
+                        : inst.state === 'stopped'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {inst.state}
                   </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(inst.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(inst.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(inst.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(inst.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(inst.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(inst.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={rdsPage} totalItems={sortedRds.length} pageSize={pageSize} onPageChange={setRdsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setRdsPage(1))} />
+        <Pagination
+          currentPage={rdsPage}
+          totalItems={sortedRds.length}
+          pageSize={pageSize}
+          onPageChange={setRdsPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setRdsPage(1))}
+        />
       </div>
     );
   }
@@ -677,13 +1026,53 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
-              <SortableHeader label="Cluster" sortKey="clusterName" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
-              <SortableHeader label="Status" sortKey="status" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
-              <SortableHeader label="Version" sortKey="version" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
-              <SortableHeader label="Platform" sortKey="platform" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={eksSort} onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Cluster"
+                sortKey="clusterName"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Status"
+                sortKey="status"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Version"
+                sortKey="version"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Platform"
+                sortKey="platform"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={eksSort}
+                onSort={(k) => handleSort(setEksSort, eksSort, k, () => setEksPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -692,29 +1081,48 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedEks.map((cluster) => (
               <tr key={`${cluster.accountId}-${cluster.region}-${cluster.clusterName}`}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.accountName || cluster.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {cluster.accountName || cluster.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{cluster.clusterName}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    cluster.status === 'ACTIVE' ? 'bg-green-100 text-green-800' :
-                    cluster.status === 'CREATING' ? 'bg-yellow-100 text-yellow-800' :
-                    cluster.status === 'DELETING' ? 'bg-red-100 text-red-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      cluster.status === 'ACTIVE'
+                        ? 'bg-green-100 text-green-800'
+                        : cluster.status === 'CREATING'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : cluster.status === 'DELETING'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {cluster.status}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.version}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{cluster.platform}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(cluster.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(cluster.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(cluster.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(cluster.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(cluster.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(cluster.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={eksPage} totalItems={sortedEks.length} pageSize={pageSize} onPageChange={setEksPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEksPage(1))} />
+        <Pagination
+          currentPage={eksPage}
+          totalItems={sortedEks.length}
+          pageSize={pageSize}
+          onPageChange={setEksPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setEksPage(1))}
+        />
       </div>
     );
   }
@@ -727,12 +1135,48 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="Type" sortKey="type" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="Scheme" sortKey="scheme" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="State" sortKey="state" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Type"
+                sortKey="type"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Scheme"
+                sortKey="scheme"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="State"
+                sortKey="state"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+                rowSpan={2}
+              />
               <th
                 colSpan={2}
                 className="px-6 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200"
@@ -744,11 +1188,12 @@ export const CostTable: React.FC<CostTableProps> = ({
                       {(['1h', '24h', '30d'] as const).map((w) => (
                         <button
                           key={w}
-                          onClick={(e) => { e.stopPropagation(); onUsageWindowChange(w); }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUsageWindowChange(w);
+                          }}
                           className={`px-1.5 py-0.5 text-[10px] font-medium leading-none ${
-                            usageWindow === w
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white text-gray-500 hover:bg-gray-50'
+                            usageWindow === w ? 'bg-blue-600 text-white' : 'bg-white text-gray-500 hover:bg-gray-50'
                           }`}
                         >
                           {w}
@@ -758,11 +1203,25 @@ export const CostTable: React.FC<CostTableProps> = ({
                   )}
                 </span>
               </th>
-              <CostGroupHeader sortKey="hourlyCost" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+              />
             </tr>
             <tr>
-              <SortableSubHeader label="Requests" sortKey="requestVolume" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
-              <SortableSubHeader label="Bandwidth" sortKey="bandwidthBytes" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
+              <SortableSubHeader
+                label="Requests"
+                sortKey="requestVolume"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+              />
+              <SortableSubHeader
+                label="Bandwidth"
+                sortKey="bandwidthBytes"
+                currentSort={elbSort}
+                onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
+              />
               <CostSubHeaders />
             </tr>
           </thead>
@@ -773,21 +1232,29 @@ export const CostTable: React.FC<CostTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lb.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{lb.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    lb.type === 'application' ? 'bg-blue-100 text-blue-800' :
-                    lb.type === 'network' ? 'bg-purple-100 text-purple-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      lb.type === 'application'
+                        ? 'bg-blue-100 text-blue-800'
+                        : lb.type === 'network'
+                          ? 'bg-purple-100 text-purple-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {lb.type}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{lb.scheme}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    lb.state === 'active' ? 'bg-green-100 text-green-800' :
-                    lb.state === 'provisioning' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      lb.state === 'active'
+                        ? 'bg-green-100 text-green-800'
+                        : lb.state === 'provisioning'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {lb.state}
                   </span>
                 </td>
@@ -795,9 +1262,16 @@ export const CostTable: React.FC<CostTableProps> = ({
                   {!lb.usageStatus ? (
                     <span className="inline-block h-4 w-16 bg-gray-200 rounded animate-pulse" />
                   ) : lb.usageStatus === 'unavailable' ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800" title={lb.usageError}>N/A</span>
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                      title={lb.usageError}
+                    >
+                      N/A
+                    </span>
                   ) : lb.usageStatus === 'partial' ? (
-                    <span className="text-gray-400" title={lb.usageError}>{formatVolume(lb.requestVolume)}</span>
+                    <span className="text-gray-400" title={lb.usageError}>
+                      {formatVolume(lb.requestVolume)}
+                    </span>
                   ) : (
                     formatVolume(lb.requestVolume)
                   )}
@@ -806,21 +1280,40 @@ export const CostTable: React.FC<CostTableProps> = ({
                   {!lb.usageStatus ? (
                     <span className="inline-block h-4 w-16 bg-gray-200 rounded animate-pulse" />
                   ) : lb.usageStatus === 'unavailable' ? (
-                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800" title={lb.usageError}>N/A</span>
+                    <span
+                      className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                      title={lb.usageError}
+                    >
+                      N/A
+                    </span>
                   ) : lb.usageStatus === 'partial' ? (
-                    <span className="text-gray-400" title={lb.usageError}>{formatBytes(lb.bandwidthBytes)}</span>
+                    <span className="text-gray-400" title={lb.usageError}>
+                      {formatBytes(lb.bandwidthBytes)}
+                    </span>
                   ) : (
                     formatBytes(lb.bandwidthBytes)
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(lb.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(lb.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(lb.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(lb.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(lb.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(lb.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={elbPage} totalItems={sortedElb.length} pageSize={pageSize} onPageChange={setElbPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setElbPage(1))} />
+        <Pagination
+          currentPage={elbPage}
+          totalItems={sortedElb.length}
+          pageSize={pageSize}
+          onPageChange={setElbPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setElbPage(1))}
+        />
       </div>
     );
   }
@@ -833,14 +1326,60 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <SortableHeader label="ID" sortKey="id" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <SortableHeader label="State" sortKey="state" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <SortableHeader label="Type" sortKey="type" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <SortableHeader label="VPC ID" sortKey="vpcId" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={natSort} onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="ID"
+                sortKey="id"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="State"
+                sortKey="state"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Type"
+                sortKey="type"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="VPC ID"
+                sortKey="vpcId"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={natSort}
+                onSort={(k) => handleSort(setNatSort, natSort, k, () => setNatPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -849,29 +1388,47 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedNat.map((gateway) => (
               <tr key={gateway.id}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.accountName || gateway.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {gateway.accountName || gateway.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{gateway.name || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.id}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    gateway.state === 'available' ? 'bg-green-100 text-green-800' :
-                    gateway.state === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-gray-100 text-gray-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      gateway.state === 'available'
+                        ? 'bg-green-100 text-green-800'
+                        : gateway.state === 'pending'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-800'
+                    }`}
+                  >
                     {gateway.state}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.type}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{gateway.vpcId}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(gateway.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(gateway.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(gateway.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(gateway.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(gateway.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(gateway.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={natPage} totalItems={sortedNat.length} pageSize={pageSize} onPageChange={setNatPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setNatPage(1))} />
+        <Pagination
+          currentPage={natPage}
+          totalItems={sortedNat.length}
+          pageSize={pageSize}
+          onPageChange={setNatPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setNatPage(1))}
+        />
       </div>
     );
   }
@@ -884,14 +1441,60 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <SortableHeader label="Public IP" sortKey="publicIp" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <SortableHeader label="Allocation ID" sortKey="allocationId" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <SortableHeader label="Associated" sortKey="isAssociated" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <SortableHeader label="Instance ID" sortKey="instanceId" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={eipSort} onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Public IP"
+                sortKey="publicIp"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Allocation ID"
+                sortKey="allocationId"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Associated"
+                sortKey="isAssociated"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Instance ID"
+                sortKey="instanceId"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={eipSort}
+                onSort={(k) => handleSort(setEipSort, eipSort, k, () => setEipPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -906,21 +1509,35 @@ export const CostTable: React.FC<CostTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.publicIp}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.allocationId}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    ip.isAssociated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                  }`}>
+                  <span
+                    className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                      ip.isAssociated ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+                    }`}
+                  >
                     {ip.isAssociated ? 'Yes' : 'No'}
                   </span>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{ip.instanceId || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(ip.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(ip.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(ip.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(ip.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(ip.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(ip.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={eipPage} totalItems={sortedEip.length} pageSize={pageSize} onPageChange={setEipPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setEipPage(1))} />
+        <Pagination
+          currentPage={eipPage}
+          totalItems={sortedEip.length}
+          pageSize={pageSize}
+          onPageChange={setEipPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setEipPage(1))}
+        />
       </div>
     );
   }
@@ -933,11 +1550,39 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
-              <SortableHeader label="Name" sortKey="name" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
-              <SortableHeader label="Description" sortKey="description" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={secretsSort} onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={secretsSort}
+                onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={secretsSort}
+                onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Name"
+                sortKey="name"
+                currentSort={secretsSort}
+                onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Description"
+                sortKey="description"
+                currentSort={secretsSort}
+                onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={secretsSort}
+                onSort={(k) => handleSort(setSecretsSort, secretsSort, k, () => setSecretsPage(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -946,18 +1591,32 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedSecrets.map((secret) => (
               <tr key={secret.arn}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{secret.accountName || secret.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {secret.accountName || secret.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{secret.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{secret.name}</td>
                 <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">{secret.description || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(secret.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(secret.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(secret.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(secret.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(secret.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(secret.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={secretsPage} totalItems={sortedSecrets.length} pageSize={pageSize} onPageChange={setSecretsPage} onPageSizeChange={(size) => handlePageSizeChange(size, () => setSecretsPage(1))} />
+        <Pagination
+          currentPage={secretsPage}
+          totalItems={sortedSecrets.length}
+          pageSize={pageSize}
+          onPageChange={setSecretsPage}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setSecretsPage(1))}
+        />
       </div>
     );
   }
@@ -970,12 +1629,46 @@ export const CostTable: React.FC<CostTableProps> = ({
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <SortableHeader label="Account" sortKey="accountName" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
-              <SortableHeader label="Region" sortKey="region" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
-              <SortableHeader label="Public IP" sortKey="publicIp" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
-              <SortableHeader label="Instance ID" sortKey="instanceId" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
-              <SortableHeader label="Instance Name" sortKey="instanceName" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} rowSpan={2} />
-              <CostGroupHeader sortKey="hourlyCost" currentSort={publicIpv4Sort} onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))} />
+              <SortableHeader
+                label="Account"
+                sortKey="accountName"
+                currentSort={publicIpv4Sort}
+                onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Region"
+                sortKey="region"
+                currentSort={publicIpv4Sort}
+                onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Public IP"
+                sortKey="publicIp"
+                currentSort={publicIpv4Sort}
+                onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Instance ID"
+                sortKey="instanceId"
+                currentSort={publicIpv4Sort}
+                onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))}
+                rowSpan={2}
+              />
+              <SortableHeader
+                label="Instance Name"
+                sortKey="instanceName"
+                currentSort={publicIpv4Sort}
+                onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))}
+                rowSpan={2}
+              />
+              <CostGroupHeader
+                sortKey="hourlyCost"
+                currentSort={publicIpv4Sort}
+                onSort={(k) => handleSort(setPublicIpv4Sort, publicIpv4Sort, k, () => setPublicIpv4Page(1))}
+              />
             </tr>
             <tr>
               <CostSubHeaders />
@@ -984,19 +1677,33 @@ export const CostTable: React.FC<CostTableProps> = ({
           <tbody className="bg-white divide-y divide-gray-200">
             {paginatedPublicIpv4.map((pip) => (
               <tr key={`${pip.accountId}-${pip.region}-${pip.publicIp}`}>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.accountName || pip.accountId}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                  {pip.accountName || pip.accountId}
+                </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.region}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{pip.publicIp}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.instanceId || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{pip.instanceName || '-'}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(pip.hourlyCost)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(dailyCost(pip.hourlyCost), 2)}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">{formatCost(monthlyCost(pip.hourlyCost), 2)}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(pip.hourlyCost)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(dailyCost(pip.hourlyCost), 2)}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                  {formatCost(monthlyCost(pip.hourlyCost), 2)}
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
-        <Pagination currentPage={publicIpv4Page} totalItems={sortedPublicIpv4.length} pageSize={pageSize} onPageChange={setPublicIpv4Page} onPageSizeChange={(size) => handlePageSizeChange(size, () => setPublicIpv4Page(1))} />
+        <Pagination
+          currentPage={publicIpv4Page}
+          totalItems={sortedPublicIpv4.length}
+          pageSize={pageSize}
+          onPageChange={setPublicIpv4Page}
+          onPageSizeChange={(size) => handlePageSizeChange(size, () => setPublicIpv4Page(1))}
+        />
       </div>
     );
   }

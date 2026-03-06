@@ -192,7 +192,18 @@ export interface CostFilters {
   resources?: string[];
 }
 
-export const RESOURCE_TYPES = ['ec2', 'ebs', 'ecs', 'rds', 'eks', 'elb', 'nat', 'eip', 'secrets', 'publicipv4'] as const;
+export const RESOURCE_TYPES = [
+  'ec2',
+  'ebs',
+  'ecs',
+  'rds',
+  'eks',
+  'elb',
+  'nat',
+  'eip',
+  'secrets',
+  'publicipv4',
+] as const;
 
 export interface VersionInfo {
   version: string;

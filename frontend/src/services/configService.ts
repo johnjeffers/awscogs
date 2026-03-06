@@ -36,10 +36,7 @@ function wildcardToRegex(pattern: string): RegExp {
   return new RegExp(`^${withWildcards}$`, 'i');
 }
 
-export function shouldExcludeAccount(
-  account: { id: string; name: string },
-  config: AppConfig
-): boolean {
+export function shouldExcludeAccount(account: { id: string; name: string }, config: AppConfig): boolean {
   const excludeIds = config.exclude?.accounts?.ids || [];
   const excludeNames = config.exclude?.accounts?.names || [];
 

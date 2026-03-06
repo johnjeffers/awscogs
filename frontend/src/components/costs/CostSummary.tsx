@@ -51,10 +51,9 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
   const totalMonthly = totalCost * 730;
 
   const showBoth = selectedCost !== totalCost || selectedCount !== totalCount;
-  const showBothTraffic = traffic && (
-    traffic.selectedRequests !== traffic.totalRequests ||
-    traffic.selectedBandwidth !== traffic.totalBandwidth
-  );
+  const showBothTraffic =
+    traffic &&
+    (traffic.selectedRequests !== traffic.totalRequests || traffic.selectedBandwidth !== traffic.totalBandwidth);
 
   return (
     <div className="mb-6">
@@ -83,17 +82,23 @@ export const CostSummary: React.FC<CostSummaryProps> = ({
               <dd className="mt-2 grid grid-cols-3 gap-4">
                 <div>
                   <div className="text-xs text-gray-400 uppercase">Hourly</div>
-                  <div className="text-lg font-semibold text-gray-900">{formatCost(showBoth ? selectedCost : totalCost)}</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {formatCost(showBoth ? selectedCost : totalCost)}
+                  </div>
                   {showBoth && <div className="text-xs text-gray-500">of {formatCost(totalCost)}</div>}
                 </div>
                 <div>
                   <div className="text-xs text-gray-400 uppercase">Daily</div>
-                  <div className="text-lg font-semibold text-gray-900">{formatCost(showBoth ? selectedDaily : totalDaily)}</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {formatCost(showBoth ? selectedDaily : totalDaily)}
+                  </div>
                   {showBoth && <div className="text-xs text-gray-500">of {formatCost(totalDaily)}</div>}
                 </div>
                 <div>
                   <div className="text-xs text-gray-400 uppercase">Monthly</div>
-                  <div className="text-lg font-semibold text-gray-900">{formatCost(showBoth ? selectedMonthly : totalMonthly)}</div>
+                  <div className="text-lg font-semibold text-gray-900">
+                    {formatCost(showBoth ? selectedMonthly : totalMonthly)}
+                  </div>
                   {showBoth && <div className="text-xs text-gray-500">of {formatCost(totalMonthly)}</div>}
                 </div>
               </dd>

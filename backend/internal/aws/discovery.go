@@ -1790,11 +1790,11 @@ func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EB
 
 // elbMetricMeta holds CloudWatch metric metadata for a load balancer type
 type elbMetricMeta struct {
-	namespace           string
-	dimensionName       string
-	dimensionValue      string
-	volumeMetric        string
-	bandwidthMetric     string
+	namespace       string
+	dimensionName   string
+	dimensionValue  string
+	volumeMetric    string
+	bandwidthMetric string
 }
 
 // getELBMetricMeta returns CloudWatch metric metadata for a load balancer

@@ -98,7 +98,10 @@ export const costApi = {
     return response;
   },
 
-  async getELBCosts(filters: CostFilters = {}, options?: { includeUsage?: boolean; usageWindow?: string }): Promise<CostResponse> {
+  async getELBCosts(
+    filters: CostFilters = {},
+    options?: { includeUsage?: boolean; usageWindow?: string },
+  ): Promise<CostResponse> {
     const params = new URLSearchParams();
     if (filters.accounts?.length) {
       params.set('account', filters.accounts.join(','));

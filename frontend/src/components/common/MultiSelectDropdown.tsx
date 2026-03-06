@@ -126,9 +126,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
             </div>
           ))}
 
-          {options.length === 0 && (
-            <div className="py-2 pl-3 pr-9 text-gray-500">No options available</div>
-          )}
+          {options.length === 0 && <div className="py-2 pl-3 pr-9 text-gray-500">No options available</div>}
         </div>
       )}
     </div>
