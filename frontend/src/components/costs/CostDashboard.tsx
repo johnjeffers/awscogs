@@ -217,6 +217,28 @@ export const CostDashboard: React.FC = () => {
     return { cost: sumCost(items), count: items?.length || 0 };
   }, [filteredData, activeTab]);
 
+  const trafficTotals = useMemo(() => {
+    if (!selectedResources.includes('elb')) return undefined;
+    const sumTraffic = (lbs: typeof filteredData extends null ? never : NonNullable<typeof filteredData>['elb']) => {
+      if (!lbs) return { requests: 0, bandwidth: 0 };
+      return lbs.reduce((acc, lb) => ({
+        requests: acc.requests + (lb.requestVolume || 0),
+        bandwidth: acc.bandwidth + (lb.bandwidthBytes || 0),
+      }), { requests: 0, bandwidth: 0 });
+    };
+
+    const total = sumTraffic(data?.loadBalancers);
+    const selected = sumTraffic(filteredData?.elb);
+
+    return {
+      window: usageWindow,
+      selectedRequests: selected.requests,
+      totalRequests: total.requests,
+      selectedBandwidth: selected.bandwidth,
+      totalBandwidth: total.bandwidth,
+    };
+  }, [data?.loadBalancers, filteredData?.elb, selectedResources, usageWindow]);
+
   const exportToCSV = () => {
     if (!filteredData) return;
 
@@ -496,6 +518,7 @@ export const CostDashboard: React.FC = () => {
             selectedCount={selectedData.count}
             totalCount={totals.count}
             currency={data.currency}
+            traffic={trafficTotals}
           />
 
           {/* Tabs and Filter */}
