@@ -24,7 +24,7 @@ const allTabs: { id: TabType; label: string }[] = [
 
 export const CostDashboard: React.FC = () => {
   const dispatch = useAppDispatch();
-  const { data, loading, error, hasLoadedData, selectedAccounts, selectedRegions, selectedResources } = useAppSelector((state) => state.costs);
+  const { data, loading, error, hasLoadedData, dataVersion, selectedAccounts, selectedRegions, selectedResources } = useAppSelector((state) => state.costs);
   const [activeTab, setActiveTab] = useState<TabType>('accounts');
   const [filter, setFilter] = useState('');
   const [usageWindow, setUsageWindow] = useState<'1h' | '24h' | '30d'>('1h');
@@ -71,7 +71,7 @@ export const CostDashboard: React.FC = () => {
     };
   }, [dispatch, hasLoadedData, selectedAccounts, selectedRegions, selectedResources]);
 
-  // Fetch ELB usage when ELB tab is active
+  // Fetch ELB usage when ELB tab is active or cost data refreshes
   useEffect(() => {
     if (activeTab === 'elb' && hasLoadedData && data?.loadBalancers?.length) {
       const promise = dispatch(fetchELBUsage(usageWindow));
@@ -79,7 +79,7 @@ export const CostDashboard: React.FC = () => {
       promise.then(() => clearTimeout(timer));
       return () => clearTimeout(timer);
     }
-  }, [dispatch, activeTab, usageWindow, hasLoadedData, data?.loadBalancers?.length]);
+  }, [dispatch, activeTab, usageWindow, hasLoadedData, dataVersion]);
 
   // Filter data based on active tab and filter text
   const filteredData = useMemo(() => {

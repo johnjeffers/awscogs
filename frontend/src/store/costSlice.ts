@@ -15,6 +15,7 @@ interface CostState {
   selectedRegions: string[];
   selectedResources: string[];
   hasLoadedData: boolean;
+  dataVersion: number;
 }
 
 const initialState: CostState = {
@@ -29,6 +30,7 @@ const initialState: CostState = {
   selectedRegions: [],
   selectedResources: [],
   hasLoadedData: false,
+  dataVersion: 0,
 };
 
 export const fetchCosts = createAsyncThunk(
@@ -102,6 +104,7 @@ const costSlice = createSlice({
         state.loading = false;
         state.data = action.payload;
         state.hasLoadedData = true;
+        state.dataVersion += 1;
       })
       .addCase(fetchCosts.rejected, (state, action) => {
         state.loading = false;
