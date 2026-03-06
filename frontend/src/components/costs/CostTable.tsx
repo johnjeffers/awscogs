@@ -459,7 +459,7 @@ export const CostTable: React.FC<CostTableProps> = ({
                 </td>
                 {visibleColumns.map((col) => (
                   <td key={col.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                    {(account as Record<string, unknown>)[col.countKey] as number}
+                    {(account as unknown as Record<string, number>)[col.countKey]}
                   </td>
                 ))}
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
@@ -528,7 +528,7 @@ export const CostTable: React.FC<CostTableProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{region.region}</td>
                 {visibleColumns.map((col) => (
                   <td key={col.id} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
-                    {(region as Record<string, unknown>)[col.countKey] as number}
+                    {(region as unknown as Record<string, number>)[col.countKey]}
                   </td>
                 ))}
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">

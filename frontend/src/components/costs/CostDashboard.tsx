@@ -344,7 +344,7 @@ export const CostDashboard: React.FC = () => {
         rows = (filteredData.accounts || []).map((a) => [
           a.accountId,
           a.accountName,
-          ...countCols.map((c) => String((a as Record<string, unknown>)[c.key])),
+          ...countCols.map((c) => String((a as unknown as Record<string, unknown>)[c.key])),
           a.totalCost.toFixed(4),
           dailyCost(a.totalCost).toFixed(2),
           monthlyCost(a.totalCost).toFixed(2),
@@ -367,7 +367,7 @@ export const CostDashboard: React.FC = () => {
         headers = ['Region', ...countCols.map((c) => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.regions || []).map((r) => [
           r.region,
-          ...countCols.map((c) => String((r as Record<string, unknown>)[c.key])),
+          ...countCols.map((c) => String((r as unknown as Record<string, unknown>)[c.key])),
           r.totalCost.toFixed(4),
           dailyCost(r.totalCost).toFixed(2),
           monthlyCost(r.totalCost).toFixed(2),
