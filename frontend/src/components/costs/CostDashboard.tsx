@@ -528,23 +528,6 @@ export const CostDashboard: React.FC = () => {
 
                 {/* Filter Input and Export - fixed on the right */}
                 <div className="py-3 flex items-center gap-3 flex-shrink-0 ml-4">
-                  {activeTab === 'elb' && (
-                    <div className="flex items-center gap-1 border border-gray-300 rounded-md overflow-hidden">
-                      {(['1h', '24h', '30d'] as const).map((w) => (
-                        <button
-                          key={w}
-                          onClick={() => setUsageWindow(w)}
-                          className={`px-3 py-2 text-sm font-medium ${
-                            usageWindow === w
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-white text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          {w}
-                        </button>
-                      ))}
-                    </div>
-                  )}
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                       <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -606,7 +589,7 @@ export const CostDashboard: React.FC = () => {
                 <CostTable eks={filteredData?.eks} />
               )}
               {activeTab === 'elb' && (
-                <CostTable elb={filteredData?.elb} />
+                <CostTable elb={filteredData?.elb} usageWindow={usageWindow} onUsageWindowChange={setUsageWindow} />
               )}
               {activeTab === 'nat' && (
                 <CostTable nat={filteredData?.nat} />

@@ -15,6 +15,8 @@ interface CostTableProps {
   secrets?: Secret[];
   publicipv4?: PublicIPv4[];
   selectedResources?: string[];
+  usageWindow?: '1h' | '24h' | '30d';
+  onUsageWindowChange?: (window: '1h' | '24h' | '30d') => void;
 }
 
 const SUMMARY_RESOURCE_COLUMNS: { id: string; label: string; countKey: string }[] = [
@@ -153,29 +155,44 @@ const SortableHeader: React.FC<{
   );
 };
 
-const CostGroupHeader: React.FC<{
+const GroupHeader: React.FC<{
+  label: string;
+  colSpan: number;
   sortKey: string;
   currentSort: SortConfig;
   onSort: (key: string) => void;
-}> = ({ sortKey, currentSort, onSort }) => {
+}> = ({ label, colSpan, sortKey, currentSort, onSort }) => {
   const isActive = currentSort.key === sortKey;
   return (
     <th
-      colSpan={3}
+      colSpan={colSpan}
       onClick={() => onSort(sortKey)}
       className="px-6 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 select-none whitespace-nowrap border-b border-gray-200"
     >
-      Cost
+      {label}
       <SortIcon active={isActive} direction={isActive ? currentSort.direction : 'asc'} />
     </th>
   );
 };
+
+const CostGroupHeader: React.FC<{
+  sortKey: string;
+  currentSort: SortConfig;
+  onSort: (key: string) => void;
+}> = (props) => <GroupHeader label="Cost" colSpan={3} {...props} />;
 
 const CostSubHeaders: React.FC = () => (
   <>
     <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Hourly</th>
     <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Daily</th>
     <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Monthly</th>
+  </>
+);
+
+const TrafficSubHeaders: React.FC = () => (
+  <>
+    <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Requests</th>
+    <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Bandwidth</th>
   </>
 );
 
@@ -209,6 +226,8 @@ export const CostTable: React.FC<CostTableProps> = ({
   secrets,
   publicipv4,
   selectedResources,
+  usageWindow,
+  onUsageWindowChange,
 }) => {
   const visibleColumns = useMemo(() => {
     if (!selectedResources?.length) return SUMMARY_RESOURCE_COLUMNS;
@@ -687,11 +706,35 @@ export const CostTable: React.FC<CostTableProps> = ({
               <SortableHeader label="Type" sortKey="type" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
               <SortableHeader label="Scheme" sortKey="scheme" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
               <SortableHeader label="State" sortKey="state" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="Requests" sortKey="requestVolume" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
-              <SortableHeader label="Bandwidth" sortKey="bandwidthBytes" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} rowSpan={2} />
+              <th
+                colSpan={2}
+                className="px-6 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200"
+              >
+                <span className="inline-flex items-center gap-2">
+                  Traffic
+                  {onUsageWindowChange && (
+                    <span className="inline-flex rounded overflow-hidden border border-gray-300">
+                      {(['1h', '24h', '30d'] as const).map((w) => (
+                        <button
+                          key={w}
+                          onClick={(e) => { e.stopPropagation(); onUsageWindowChange(w); }}
+                          className={`px-1.5 py-0.5 text-[10px] font-medium leading-none ${
+                            usageWindow === w
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white text-gray-500 hover:bg-gray-50'
+                          }`}
+                        >
+                          {w}
+                        </button>
+                      ))}
+                    </span>
+                  )}
+                </span>
+              </th>
               <CostGroupHeader sortKey="hourlyCost" currentSort={elbSort} onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))} />
             </tr>
             <tr>
+              <TrafficSubHeaders />
               <CostSubHeaders />
             </tr>
           </thead>
