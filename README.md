@@ -29,7 +29,7 @@ These AWS resource types are supported:
 - RDS instances
 - AWS Secrets Manager secrets
 
-New in v0.2.0, the Load Balancers view can now query CloudWatch Metrics to get requests and throughput data, for the past 1 hour/24 hours/30 days. This isn't, strictly speaking, COGS data, but it's related enough to be worth including here. It feels a little like a cheat code considering that AWS does not make it easy to get at this data across multiple accounts/regions/load balancers. awsCOGS can pull it all at once and summarize it, or allow you do download it to a CSV for more detailed analysis.
+New in v0.2.0, the Load Balancers view can now query CloudWatch Metrics to get requests and throughput data, for the past 1 hour/24 hours/30 days. This isn't, strictly speaking, COGS data, but it's related enough to be worth including here. It feels a little like a cheat code considering that AWS does not make it easy to get at this data across multiple accounts/regions/load balancers. awsCOGS can pull it all at once and summarize it, or allow you to download it to a CSV for more detailed analysis.
 
 ## Environment Variables
 
