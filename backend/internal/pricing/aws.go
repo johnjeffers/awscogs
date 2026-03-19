@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -115,35 +116,41 @@ func validateCredentials(ctx context.Context, client *pricing.Client) error {
 	return nil
 }
 
-// GetEC2Price returns the hourly on-demand price for an EC2 instance type
-func (p *AWSProvider) GetEC2Price(ctx context.Context, region, instanceType string) (cogtypes.CostValue, error) {
-	cacheKey := fmt.Sprintf("%s:%s", region, instanceType)
+// termFilter creates a TermMatch pricing filter
+func termFilter(field, value string) types.Filter {
+	return types.Filter{
+		Type:  types.FilterTypeTermMatch,
+		Field: aws.String(field),
+		Value: aws.String(value),
+	}
+}
 
-	// Check cache first
+// getCachedPrice checks the cache for a price, and on miss uses singleflight to
+// fetch it exactly once, preventing thundering herd on concurrent requests.
+func (p *AWSProvider) getCachedPrice(cache map[string]cogtypes.CostValue, cacheKey, sfKey string, fetch func() (cogtypes.CostValue, error)) (cogtypes.CostValue, error) {
 	p.cacheMu.RLock()
-	if price, ok := p.ec2Cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+	if price, ok := cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
 		p.cacheMu.RUnlock()
 		return price, nil
 	}
 	p.cacheMu.RUnlock()
 
-	// Use singleflight to prevent concurrent duplicate API calls for the same key
-	v, err, _ := p.sfGroup.Do("ec2:"+cacheKey, func() (interface{}, error) {
+	v, err, _ := p.sfGroup.Do(sfKey, func() (any, error) {
 		// Double-check cache after acquiring singleflight
 		p.cacheMu.RLock()
-		if price, ok := p.ec2Cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+		if price, ok := cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
 			p.cacheMu.RUnlock()
 			return price, nil
 		}
 		p.cacheMu.RUnlock()
 
-		price, err := p.fetchEC2Price(ctx, region, instanceType)
+		price, err := fetch()
 		if err != nil {
 			return cogtypes.CostValue(0), err
 		}
 
 		p.cacheMu.Lock()
-		p.ec2Cache[cacheKey] = price
+		cache[cacheKey] = price
 		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
 			p.cacheExpiry = time.Now().Add(p.cacheDuration)
 		}
@@ -156,6 +163,14 @@ func (p *AWSProvider) GetEC2Price(ctx context.Context, region, instanceType stri
 	}
 
 	return v.(cogtypes.CostValue), nil
+}
+
+// GetEC2Price returns the hourly on-demand price for an EC2 instance type
+func (p *AWSProvider) GetEC2Price(ctx context.Context, region, instanceType string) (cogtypes.CostValue, error) {
+	cacheKey := fmt.Sprintf("%s:%s", region, instanceType)
+	return p.getCachedPrice(p.ec2Cache, cacheKey, "ec2:"+cacheKey, func() (cogtypes.CostValue, error) {
+		return p.fetchEC2Price(ctx, region, instanceType)
+	})
 }
 
 // GetEBSPrice returns the hourly price for an EBS volume
@@ -174,7 +189,7 @@ func (p *AWSProvider) GetEBSPrice(ctx context.Context, region, volumeType string
 
 	if !hasBase || !cacheValid {
 		// Use singleflight to prevent concurrent duplicate API calls
-		v, err, _ := p.sfGroup.Do("ebs:"+baseCacheKey, func() (interface{}, error) {
+		v, err, _ := p.sfGroup.Do("ebs:"+baseCacheKey, func() (any, error) {
 			// Double-check cache
 			p.cacheMu.RLock()
 			bp, ok := p.ebsCache[baseCacheKey]
@@ -243,49 +258,14 @@ func (p *AWSProvider) GetRDSPrice(ctx context.Context, region, instanceClass, en
 		multiAZStr = "true"
 	}
 	cacheKey := fmt.Sprintf("%s:%s:%s:%s", region, instanceClass, engine, multiAZStr)
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.rdsCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// Use singleflight to prevent concurrent duplicate API calls for the same key
-	v, err, _ := p.sfGroup.Do("rds:"+cacheKey, func() (interface{}, error) {
-		// Double-check cache after acquiring singleflight
-		p.cacheMu.RLock()
-		if price, ok := p.rdsCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-			p.cacheMu.RUnlock()
-			return price, nil
-		}
-		p.cacheMu.RUnlock()
-
-		price, err := p.fetchRDSPrice(ctx, region, instanceClass, engine, multiAZ)
-		if err != nil {
-			return cogtypes.CostValue(0), err
-		}
-
-		p.cacheMu.Lock()
-		p.rdsCache[cacheKey] = price
-		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-			p.cacheExpiry = time.Now().Add(p.cacheDuration)
-		}
-		p.cacheMu.Unlock()
-
-		return price, nil
+	return p.getCachedPrice(p.rdsCache, cacheKey, "rds:"+cacheKey, func() (cogtypes.CostValue, error) {
+		return p.fetchRDSPrice(ctx, region, instanceClass, engine, multiAZ)
 	})
-	if err != nil {
-		return 0, err
-	}
-
-	return v.(cogtypes.CostValue), nil
 }
 
 // GetECSPrice returns the hourly price for an ECS Fargate service
 // For Fargate, pricing is based on vCPU and memory hours
-// Since we don't have task definition details, we use average task estimates
+// Since we don't have task definition details, we estimate with 0.5 vCPU and 1GB memory per task
 func (p *AWSProvider) GetECSPrice(ctx context.Context, region, launchType string, runningCount int32) (cogtypes.CostValue, error) {
 	if runningCount <= 0 {
 		return 0, nil
@@ -297,247 +277,62 @@ func (p *AWSProvider) GetECSPrice(ctx context.Context, region, launchType string
 	}
 
 	cacheKey := fmt.Sprintf("%s:%s", region, launchType)
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.ecsCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		// Price per task * running count
-		return price * cogtypes.CostValue(runningCount), nil
+	perTaskPrice, err := p.getCachedPrice(p.ecsCache, cacheKey, "ecs:"+cacheKey, func() (cogtypes.CostValue, error) {
+		return p.fetchECSFargatePrice(ctx, region)
+	})
+	if err != nil {
+		return 0, err
 	}
-	p.cacheMu.RUnlock()
-
-	// Calculate Fargate price per task
-	// Using default estimate of 0.5 vCPU and 1GB memory per task
-	// Fargate pricing (Linux, us-east-1):
-	// - vCPU: $0.04048 per vCPU per hour
-	// - Memory: $0.004445 per GB per hour
-	perTaskPrice := getECSFargatePrice(region)
-
-	// Update cache
-	p.cacheMu.Lock()
-	p.ecsCache[cacheKey] = perTaskPrice
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
 
 	return perTaskPrice * cogtypes.CostValue(runningCount), nil
 }
 
-// getECSFargatePrice returns the estimated hourly cost per Fargate task
-// Using default 0.5 vCPU and 1GB memory as a baseline
-func getECSFargatePrice(region string) cogtypes.CostValue {
-	// Fargate pricing varies by region
-	// These are approximate per-task costs for 0.5 vCPU + 1GB memory
-	// vCPU: $0.04048/hr, Memory: $0.004445/GB-hr (us-east-1 baseline)
-	// Per task (0.5 vCPU + 1GB): 0.5 * 0.04048 + 1 * 0.004445 = $0.02469/hr
-
-	regionPrices := map[string]cogtypes.CostValue{
-		"us-east-1":      0.02469,
-		"us-east-2":      0.02469,
-		"us-west-1":      0.02855,
-		"us-west-2":      0.02469,
-		"eu-west-1":      0.02697,
-		"eu-west-2":      0.02826,
-		"eu-west-3":      0.02826,
-		"eu-central-1":   0.02826,
-		"eu-north-1":     0.02607,
-		"ap-southeast-1": 0.02826,
-		"ap-southeast-2": 0.02955,
-		"ap-northeast-1": 0.02955,
-		"ap-northeast-2": 0.02826,
-		"ap-south-1":     0.02469,
-		"ca-central-1":   0.02697,
-		"sa-east-1":      0.03342,
-	}
-
-	if price, ok := regionPrices[region]; ok {
-		return price
-	}
-	// Default to us-east-1 pricing
-	return 0.02469
-}
-
 // GetEKSPrice returns the hourly price for an EKS cluster control plane
-// EKS control plane pricing is $0.10/hour across all regions (published AWS rate)
 func (p *AWSProvider) GetEKSPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
-	cacheKey := region
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.eksCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// EKS control plane is $0.10/hour (published AWS standard rate)
-	price := cogtypes.CostValue(0.10)
-
-	// Update cache
-	p.cacheMu.Lock()
-	p.eksCache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return p.getCachedPrice(p.eksCache, region, "eks:"+region, func() (cogtypes.CostValue, error) {
+		return p.fetchEKSPrice(ctx, region)
+	})
 }
 
-// GetELBPrice returns the hourly price for a load balancer by type (published AWS rates)
+// GetELBPrice returns the hourly price for a load balancer by type
 func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (cogtypes.CostValue, error) {
 	cacheKey := fmt.Sprintf("%s:%s", region, lbType)
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.elbCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// Published AWS load balancer hourly rates
-	var price cogtypes.CostValue
-	switch lbType {
-	case "application":
-		price = 0.0225 // ALB: $0.0225/hour base
-	case "network":
-		price = 0.0225 // NLB: $0.0225/hour base
-	case "classic":
-		price = 0.025 // CLB: $0.025/hour base
-	default:
-		price = 0.0225 // Default to ALB pricing
-	}
-
-	// Update cache
-	p.cacheMu.Lock()
-	p.elbCache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return p.getCachedPrice(p.elbCache, cacheKey, "elb:"+cacheKey, func() (cogtypes.CostValue, error) {
+		return p.fetchELBPrice(ctx, region, lbType)
+	})
 }
 
 // GetNATGatewayPrice returns the hourly price for a NAT Gateway
-// NAT Gateway pricing is $0.045/hour across most regions (published AWS rate)
 func (p *AWSProvider) GetNATGatewayPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
-	cacheKey := region
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.natCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// NAT Gateway is $0.045/hour (published AWS standard rate)
-	price := cogtypes.CostValue(0.045)
-
-	// Update cache
-	p.cacheMu.Lock()
-	p.natCache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return p.getCachedPrice(p.natCache, region, "nat:"+region, func() (cogtypes.CostValue, error) {
+		return p.fetchNATGatewayPrice(ctx, region)
+	})
 }
 
-// GetElasticIPPrice returns the hourly price for an Elastic IP (published AWS rates)
-// EIPs cost $0.005/hour when NOT associated with a running instance
-// Associated EIPs attached to running instances are free
+// GetElasticIPPrice returns the hourly price for an Elastic IP
+// Associated EIPs attached to running instances are free (billing rule, not API-sourced)
 func (p *AWSProvider) GetElasticIPPrice(ctx context.Context, region string, isAssociated bool) (cogtypes.CostValue, error) {
-	associated := "false"
 	if isAssociated {
-		associated = "true"
-	}
-	cacheKey := fmt.Sprintf("%s:%s", region, associated)
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.eipCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// Published AWS EIP pricing: free when associated, $0.005/hour when not
-	var price cogtypes.CostValue
-	if isAssociated {
-		price = 0
-	} else {
-		price = 0.005
+		return 0, nil
 	}
 
-	// Update cache
-	p.cacheMu.Lock()
-	p.eipCache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return p.getCachedPrice(p.eipCache, region, "eip:"+region, func() (cogtypes.CostValue, error) {
+		return p.fetchElasticIPPrice(ctx, region)
+	})
 }
 
-// GetSecretPrice returns the hourly price for a Secrets Manager secret (published AWS rate)
-// Secrets Manager charges $0.40/secret/month
+// GetSecretPrice returns the hourly price for a Secrets Manager secret
 func (p *AWSProvider) GetSecretPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
-	cacheKey := region
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.secretCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// Published AWS Secrets Manager pricing: $0.40/secret/month = $0.40/730 hours
-	price := cogtypes.CostValue(0.40 / 730.0)
-
-	// Update cache
-	p.cacheMu.Lock()
-	p.secretCache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return p.getCachedPrice(p.secretCache, region, "secret:"+region, func() (cogtypes.CostValue, error) {
+		return p.fetchSecretPrice(ctx, region)
+	})
 }
 
-// GetPublicIPv4Price returns the hourly price for a public IPv4 address (published AWS rate)
-// As of Feb 2024, AWS charges $0.005/hour for all public IPv4 addresses
+// GetPublicIPv4Price returns the hourly price for a public IPv4 address
 func (p *AWSProvider) GetPublicIPv4Price(ctx context.Context, region string) (cogtypes.CostValue, error) {
-	cacheKey := region
-
-	// Check cache first
-	p.cacheMu.RLock()
-	if price, ok := p.publicIPv4Cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
-		p.cacheMu.RUnlock()
-		return price, nil
-	}
-	p.cacheMu.RUnlock()
-
-	// Published AWS Public IPv4 pricing: $0.005/hour (standard across all regions, Feb 2024)
-	price := cogtypes.CostValue(0.005)
-
-	// Update cache
-	p.cacheMu.Lock()
-	p.publicIPv4Cache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return p.getCachedPrice(p.publicIPv4Cache, region, "publicipv4:"+region, func() (cogtypes.CostValue, error) {
+		return p.fetchPublicIPv4Price(ctx, region)
+	})
 }
 
 // RefreshCache forces a refresh of the pricing cache
@@ -558,6 +353,8 @@ func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	return nil
 }
 
+// ---- Fetch functions: each queries the AWS Pricing API for a specific resource type ----
+
 // fetchEC2Price queries the AWS Price List API for EC2 pricing
 func (p *AWSProvider) fetchEC2Price(ctx context.Context, region, instanceType string) (cogtypes.CostValue, error) {
 	locationName, ok := regionToLocation[region]
@@ -565,51 +362,24 @@ func (p *AWSProvider) fetchEC2Price(ctx context.Context, region, instanceType st
 		return 0, fmt.Errorf("unknown region: %s", region)
 	}
 
-	// Acquire rate limit slot
 	if err := p.waitForRateLimit(ctx); err != nil {
 		return 0, fmt.Errorf("rate limit: %w", err)
 	}
 
-	input := &pricing.GetProductsInput{
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
 		Filters: []types.Filter{
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("instanceType"),
-				Value: aws.String(instanceType),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("location"),
-				Value: aws.String(locationName),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("operatingSystem"),
-				Value: aws.String("Linux"),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("tenancy"),
-				Value: aws.String("Shared"),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("preInstalledSw"),
-				Value: aws.String("NA"),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("capacitystatus"),
-				Value: aws.String("Used"),
-			},
+			termFilter("instanceType", instanceType),
+			termFilter("location", locationName),
+			termFilter("operatingSystem", "Linux"),
+			termFilter("tenancy", "Shared"),
+			termFilter("preInstalledSw", "NA"),
+			termFilter("capacitystatus", "Used"),
 		},
 		MaxResults: aws.Int32(1),
-	}
-
-	output, err := p.client.GetProducts(ctx, input)
+	})
 	if err != nil {
-		return 0, fmt.Errorf("calling GetProducts for EC2: %w", err)
+		return 0, fmt.Errorf("GetProducts for EC2: %w", err)
 	}
 
 	if len(output.PriceList) == 0 {
@@ -619,44 +389,29 @@ func (p *AWSProvider) fetchEC2Price(ctx context.Context, region, instanceType st
 	return parsePriceFromProduct(output.PriceList[0])
 }
 
-// fetchEBSPrices queries the AWS Price List API for EBS pricing
+// fetchEBSPrices queries the AWS Price List API for EBS storage, IOPS, and throughput pricing
 func (p *AWSProvider) fetchEBSPrices(ctx context.Context, region, volumeType string) (base, iops, throughput cogtypes.CostValue, err error) {
 	locationName, ok := regionToLocation[region]
 	if !ok {
 		return 0, 0, 0, fmt.Errorf("unknown region: %s", region)
 	}
 
-	// Acquire rate limit slot
+	// Fetch base storage price
 	if err := p.waitForRateLimit(ctx); err != nil {
 		return 0, 0, 0, fmt.Errorf("rate limit: %w", err)
 	}
 
-	// Fetch base storage price
-	input := &pricing.GetProductsInput{
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonEC2"),
 		Filters: []types.Filter{
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("productFamily"),
-				Value: aws.String("Storage"),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("location"),
-				Value: aws.String(locationName),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("volumeApiName"),
-				Value: aws.String(volumeType),
-			},
+			termFilter("productFamily", "Storage"),
+			termFilter("location", locationName),
+			termFilter("volumeApiName", volumeType),
 		},
 		MaxResults: aws.Int32(10),
-	}
-
-	output, err := p.client.GetProducts(ctx, input)
+	})
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("calling GetProducts for EBS: %w", err)
+		return 0, 0, 0, fmt.Errorf("GetProducts for EBS storage: %w", err)
 	}
 
 	if len(output.PriceList) == 0 {
@@ -665,34 +420,89 @@ func (p *AWSProvider) fetchEBSPrices(ctx context.Context, region, volumeType str
 
 	base, err = parsePriceFromProduct(output.PriceList[0])
 	if err != nil {
-		return 0, 0, 0, fmt.Errorf("parsing EBS price: %w", err)
+		return 0, 0, 0, fmt.Errorf("parsing EBS base price: %w", err)
 	}
 
-	// For gp3/io1/io2, also get IOPS pricing (published standard rates)
+	// Fetch IOPS pricing for gp3/io1/io2
 	if volumeType == "gp3" || volumeType == "io1" || volumeType == "io2" {
-		iops = getEBSIOPSPrice(volumeType)
+		iops, err = p.fetchEBSIOPSPrice(ctx, region, volumeType)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("fetching EBS IOPS price: %w", err)
+		}
 	}
 
-	// For gp3, also get throughput pricing (published standard rate)
+	// Fetch throughput pricing for gp3
 	if volumeType == "gp3" {
-		throughput = cogtypes.CostValue(0.040) // $0.040 per MiB/s-month above 125
+		throughput, err = p.fetchEBSThroughputPrice(ctx, region)
+		if err != nil {
+			return 0, 0, 0, fmt.Errorf("fetching EBS throughput price: %w", err)
+		}
 	}
 
 	return base, iops, throughput, nil
 }
 
-// getEBSIOPSPrice returns the per-IOPS-month price (published standard rates)
-func getEBSIOPSPrice(volumeType string) cogtypes.CostValue {
-	switch volumeType {
-	case "gp3":
-		return 0.005 // $0.005 per IOPS-month above 3000
-	case "io1":
-		return 0.065 // $0.065 per IOPS-month
-	case "io2":
-		return 0.065 // $0.065 per IOPS-month for basic tier
-	default:
-		return 0
+// fetchEBSIOPSPrice queries the Pricing API for EBS provisioned IOPS pricing
+func (p *AWSProvider) fetchEBSIOPSPrice(ctx context.Context, region, volumeType string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
 	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []types.Filter{
+			termFilter("productFamily", "System Operation"),
+			termFilter("location", locationName),
+			termFilter("volumeApiName", volumeType),
+			termFilter("group", "EBS IOPS"),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for EBS IOPS: %w", err)
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no IOPS pricing found for EBS %s in %s", volumeType, region)
+	}
+
+	return parsePriceFromProduct(output.PriceList[0])
+}
+
+// fetchEBSThroughputPrice queries the Pricing API for gp3 throughput pricing
+func (p *AWSProvider) fetchEBSThroughputPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []types.Filter{
+			termFilter("productFamily", "Provisioned Throughput"),
+			termFilter("location", locationName),
+			termFilter("volumeApiName", "gp3"),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for EBS throughput: %w", err)
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no throughput pricing found for gp3 in %s", region)
+	}
+
+	return parsePriceFromProduct(output.PriceList[0])
 }
 
 // fetchRDSPrice queries the AWS Price List API for RDS pricing
@@ -702,12 +512,10 @@ func (p *AWSProvider) fetchRDSPrice(ctx context.Context, region, instanceClass, 
 		return 0, fmt.Errorf("unknown region: %s", region)
 	}
 
-	// Acquire rate limit slot
 	if err := p.waitForRateLimit(ctx); err != nil {
 		return 0, fmt.Errorf("rate limit: %w", err)
 	}
 
-	// Map engine names to pricing API database engine names
 	dbEngine := mapRDSEngine(engine)
 
 	deploymentOption := "Single-AZ"
@@ -715,36 +523,18 @@ func (p *AWSProvider) fetchRDSPrice(ctx context.Context, region, instanceClass, 
 		deploymentOption = "Multi-AZ"
 	}
 
-	input := &pricing.GetProductsInput{
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
 		ServiceCode: aws.String("AmazonRDS"),
 		Filters: []types.Filter{
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("instanceType"),
-				Value: aws.String(instanceClass),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("location"),
-				Value: aws.String(locationName),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("databaseEngine"),
-				Value: aws.String(dbEngine),
-			},
-			{
-				Type:  types.FilterTypeTermMatch,
-				Field: aws.String("deploymentOption"),
-				Value: aws.String(deploymentOption),
-			},
+			termFilter("instanceType", instanceClass),
+			termFilter("location", locationName),
+			termFilter("databaseEngine", dbEngine),
+			termFilter("deploymentOption", deploymentOption),
 		},
 		MaxResults: aws.Int32(10),
-	}
-
-	output, err := p.client.GetProducts(ctx, input)
+	})
 	if err != nil {
-		return 0, fmt.Errorf("calling GetProducts for RDS: %w", err)
+		return 0, fmt.Errorf("GetProducts for RDS: %w", err)
 	}
 
 	if len(output.PriceList) == 0 {
@@ -753,6 +543,323 @@ func (p *AWSProvider) fetchRDSPrice(ctx context.Context, region, instanceClass, 
 
 	return parsePriceFromProduct(output.PriceList[0])
 }
+
+// fetchECSFargatePrice queries the Pricing API for Fargate vCPU and memory rates,
+// then computes an estimated per-task cost using 0.5 vCPU + 1GB memory.
+// Verified from AmazonECS bulk pricing:
+//   - vCPU: usagetype ends with Fargate-vCPU-Hours:perCPU, cputype=perCPU, tenancy=Shared
+//   - Memory: usagetype ends with Fargate-GB-Hours, memorytype=perGB, tenancy=Shared
+//   - ARM and Windows variants have different usagetypes (Fargate-ARM-*, Fargate-Windows-*)
+func (p *AWSProvider) fetchECSFargatePrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	// Fetch all Fargate compute products for this region
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonECS"),
+		Filters: []types.Filter{
+			termFilter("productFamily", "Compute"),
+			termFilter("location", locationName),
+			termFilter("tenancy", "Shared"),
+		},
+		MaxResults: aws.Int32(20),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for ECS Fargate: %w", err)
+	}
+
+	// Parse results to find Linux x86 vCPU and memory pricing
+	// Exclude ARM (Fargate-ARM-*) and Windows (Fargate-Windows-*) variants
+	var vcpuPrice, memPrice cogtypes.CostValue
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		if strings.Contains(usagetype, "ARM") || strings.Contains(usagetype, "Windows") {
+			continue
+		}
+
+		price, err := parsePriceFromProduct(pl)
+		if err != nil {
+			continue
+		}
+
+		if strings.Contains(usagetype, "Fargate-vCPU-Hours") {
+			vcpuPrice = price
+		} else if strings.Contains(usagetype, "Fargate-GB-Hours") {
+			memPrice = price
+		}
+	}
+
+	if vcpuPrice == 0 && memPrice == 0 {
+		return 0, fmt.Errorf("no Fargate pricing found in %s", region)
+	}
+
+	// Estimate per-task cost: 0.5 vCPU + 1GB memory
+	perTaskPrice := cogtypes.CostValue(0.5)*vcpuPrice + memPrice
+	return perTaskPrice, nil
+}
+
+// fetchEKSPrice queries the Pricing API for EKS control plane pricing
+// Verified from AmazonEKS bulk pricing:
+//   - Standard control plane: operation=CreateOperation, tiertype=HAStandard, locationType=AWS Region
+//   - Other products: ExtendedSupport, Outposts, Provisioned, AutoMode, Fargate — must be excluded
+func (p *AWSProvider) fetchEKSPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEKS"),
+		Filters: []types.Filter{
+			termFilter("productFamily", "Compute"),
+			termFilter("location", locationName),
+			termFilter("locationType", "AWS Region"),
+			termFilter("operation", "CreateOperation"),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for EKS: %w", err)
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no pricing found for EKS in %s", region)
+	}
+
+	return parsePriceFromProduct(output.PriceList[0])
+}
+
+// fetchELBPrice queries the Pricing API for load balancer hourly pricing
+// Confirmed from AWSELB bulk pricing data:
+//   - ALB: productFamily=Load Balancer-Application, usagetype=LoadBalancerUsage, group=ELB:Balancing
+//   - NLB: productFamily=Load Balancer-Network, usagetype=LoadBalancerUsage, group=ELB:Balancing
+//   - CLB: productFamily=Load Balancer, usagetype=LoadBalancerUsage, group=ELB:Balancing
+func (p *AWSProvider) fetchELBPrice(ctx context.Context, region, lbType string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	// Map load balancer type to pricing API product family
+	var productFamily string
+	switch lbType {
+	case "application":
+		productFamily = "Load Balancer-Application"
+	case "network":
+		productFamily = "Load Balancer-Network"
+	default:
+		productFamily = "Load Balancer"
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AWSELB"),
+		Filters: []types.Filter{
+			termFilter("productFamily", productFamily),
+			termFilter("location", locationName),
+			termFilter("locationType", "AWS Region"),
+		},
+		MaxResults: aws.Int32(20),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for ELB %s: %w", lbType, err)
+	}
+
+	// Find the base hourly product (usagetype ends with "LoadBalancerUsage", not LCU/Reserved/TS)
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		if strings.HasSuffix(usagetype, "LoadBalancerUsage") {
+			return parsePriceFromProduct(pl)
+		}
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no pricing found for ELB %s in %s", lbType, region)
+	}
+
+	// Fallback to first result
+	return parsePriceFromProduct(output.PriceList[0])
+}
+
+// fetchNATGatewayPrice queries the Pricing API for NAT Gateway hourly pricing
+// Verified from AmazonEC2 bulk pricing:
+//   - Hourly: operation=NatGateway, usagetype=NatGateway-Hours, group=NGW:NatGateway
+//   - Data processing (excluded): usagetype=NatGateway-Bytes
+//   - Regional variants (excluded): operation=RegionalNatGateway
+//   - Provisioned (excluded): usagetype=NatGateway-Prvd-*
+func (p *AWSProvider) fetchNATGatewayPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonEC2"),
+		Filters: []types.Filter{
+			termFilter("productFamily", "NAT Gateway"),
+			termFilter("location", locationName),
+			termFilter("operation", "NatGateway"),
+			termFilter("group", "NGW:NatGateway"),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for NAT Gateway: %w", err)
+	}
+
+	// Find the hourly product (usagetype=NatGateway-Hours, not Bytes or Prvd)
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		if usagetype == "NatGateway-Hours" {
+			return parsePriceFromProduct(pl)
+		}
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no pricing found for NAT Gateway in %s", region)
+	}
+
+	return parsePriceFromProduct(output.PriceList[0])
+}
+
+// fetchElasticIPPrice queries the Pricing API for idle Elastic IP hourly pricing
+// Verified from AmazonVPC bulk pricing: EIP pricing is under AmazonVPC (not AmazonEC2)
+// as public IPv4 addresses. Since Feb 2024, all public IPv4 addresses are charged.
+//   - Idle: group=VPCPublicIPv4Address, usagetype ends with PublicIPv4:IdleAddress
+//   - In-use: group=VPCPublicIPv4Address, usagetype ends with PublicIPv4:InUseAddress
+func (p *AWSProvider) fetchElasticIPPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonVPC"),
+		Filters: []types.Filter{
+			termFilter("location", locationName),
+			termFilter("group", "VPCPublicIPv4Address"),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for Elastic IP: %w", err)
+	}
+
+	// Find the idle address product
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		if strings.HasSuffix(usagetype, "PublicIPv4:IdleAddress") {
+			return parsePriceFromProduct(pl)
+		}
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no pricing found for Elastic IP in %s", region)
+	}
+
+	return parsePriceFromProduct(output.PriceList[0])
+}
+
+// fetchSecretPrice queries the Pricing API for Secrets Manager per-secret pricing
+// Returns the hourly cost (monthly cost / 730 hours)
+func (p *AWSProvider) fetchSecretPrice(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AWSSecretsManager"),
+		Filters: []types.Filter{
+			termFilter("productFamily", "Secret"),
+			termFilter("location", locationName),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for Secrets Manager: %w", err)
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no pricing found for Secrets Manager in %s", region)
+	}
+
+	monthlyPrice, err := parsePriceFromProduct(output.PriceList[0])
+	if err != nil {
+		return 0, err
+	}
+
+	// Convert monthly to hourly (730 hours per month)
+	return monthlyPrice / 730.0, nil
+}
+
+// fetchPublicIPv4Price queries the Pricing API for public IPv4 address hourly pricing
+// Verified from AmazonVPC bulk pricing:
+//   - In-use: group=VPCPublicIPv4Address, usagetype ends with PublicIPv4:InUseAddress
+//   - Idle: group=VPCPublicIPv4Address, usagetype ends with PublicIPv4:IdleAddress
+func (p *AWSProvider) fetchPublicIPv4Price(ctx context.Context, region string) (cogtypes.CostValue, error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AmazonVPC"),
+		Filters: []types.Filter{
+			termFilter("location", locationName),
+			termFilter("group", "VPCPublicIPv4Address"),
+		},
+		MaxResults: aws.Int32(10),
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetProducts for public IPv4: %w", err)
+	}
+
+	// Find the in-use address product
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		if strings.HasSuffix(usagetype, "PublicIPv4:InUseAddress") {
+			return parsePriceFromProduct(pl)
+		}
+	}
+
+	if len(output.PriceList) == 0 {
+		return 0, fmt.Errorf("no pricing found for public IPv4 in %s", region)
+	}
+
+	return parsePriceFromProduct(output.PriceList[0])
+}
+
+// ---- Helpers ----
 
 // mapRDSEngine maps RDS engine names to pricing API database engine names
 func mapRDSEngine(engine string) string {
@@ -777,43 +884,64 @@ func mapRDSEngine(engine string) string {
 	return engine
 }
 
+// getProductAttribute extracts a named attribute from the AWS pricing product JSON
+func getProductAttribute(priceListJSON, attrName string) string {
+	var product map[string]any
+	if err := json.Unmarshal([]byte(priceListJSON), &product); err != nil {
+		return ""
+	}
+
+	prod, ok := product["product"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	attrs, ok := prod["attributes"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	val, _ := attrs[attrName].(string)
+	return val
+}
+
 // parsePriceFromProduct extracts the hourly on-demand price from the AWS pricing JSON
 func parsePriceFromProduct(priceListJSON string) (cogtypes.CostValue, error) {
-	var product map[string]interface{}
+	var product map[string]any
 	if err := json.Unmarshal([]byte(priceListJSON), &product); err != nil {
 		return 0, fmt.Errorf("parsing price list JSON: %w", err)
 	}
 
-	terms, ok := product["terms"].(map[string]interface{})
+	terms, ok := product["terms"].(map[string]any)
 	if !ok {
 		return 0, fmt.Errorf("no terms in price list")
 	}
 
-	onDemand, ok := terms["OnDemand"].(map[string]interface{})
+	onDemand, ok := terms["OnDemand"].(map[string]any)
 	if !ok {
 		return 0, fmt.Errorf("no OnDemand terms in price list")
 	}
 
 	// Get the first (and usually only) offer
 	for _, offerVal := range onDemand {
-		offer, ok := offerVal.(map[string]interface{})
+		offer, ok := offerVal.(map[string]any)
 		if !ok {
 			continue
 		}
 
-		priceDimensions, ok := offer["priceDimensions"].(map[string]interface{})
+		priceDimensions, ok := offer["priceDimensions"].(map[string]any)
 		if !ok {
 			continue
 		}
 
 		// Get the first price dimension
 		for _, dimVal := range priceDimensions {
-			dim, ok := dimVal.(map[string]interface{})
+			dim, ok := dimVal.(map[string]any)
 			if !ok {
 				continue
 			}
 
-			pricePerUnit, ok := dim["pricePerUnit"].(map[string]interface{})
+			pricePerUnit, ok := dim["pricePerUnit"].(map[string]any)
 			if !ok {
 				continue
 			}

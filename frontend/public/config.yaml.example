@@ -1,7 +1,7 @@
 exclude:
   accounts:
-    # ids:
-    #   - "123456789012"
+    ids:
+      - "123456789012"
     names:
       - "example-vendor*"
       - "*logs*"
