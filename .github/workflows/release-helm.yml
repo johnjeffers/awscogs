@@ -1,0 +1,42 @@
+name: Release Helm Chart
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release-helm:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.ref_name }}
+      OWNER: ${{ github.repository_owner }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Set chart version from tag
+        id: version
+        run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Update Chart.yaml version
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" helm/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: ${{ steps.version.outputs.version }}/" helm/Chart.yaml || \
+            echo "appVersion: ${{ steps.version.outputs.version }}" >> helm/Chart.yaml
+
+      - name: Package chart
+        run: helm package helm/
+
+      - name: Push chart to GHCR
+        run: helm push "awscogs-${{ steps.version.outputs.version }}.tgz" "oci://ghcr.io/$OWNER/charts"
