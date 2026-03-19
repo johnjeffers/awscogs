@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,13 +17,15 @@ import (
 type CostsHandler struct {
 	config    *config.Config
 	discovery *aws.Discovery
+	logger    *slog.Logger
 }
 
 // NewCostsHandler creates a new costs handler
-func NewCostsHandler(cfg *config.Config, discovery *aws.Discovery) *CostsHandler {
+func NewCostsHandler(cfg *config.Config, discovery *aws.Discovery, logger *slog.Logger) *CostsHandler {
 	return &CostsHandler{
 		config:    cfg,
 		discovery: discovery,
+		logger:    logger,
 	}
 }
 
@@ -38,21 +41,24 @@ func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 	// Get regions (discover or use config)
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	// Get accounts (discover or use config)
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	// Discover resources
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, resourceFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover resources", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -64,7 +70,9 @@ func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetAccountCosts returns account-level cost summaries
@@ -76,19 +84,22 @@ func (h *CostsHandler) GetAccountCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, nil)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover resources", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -105,7 +116,9 @@ func (h *CostsHandler) GetAccountCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetRegionCosts returns region-level cost summaries
@@ -117,19 +130,22 @@ func (h *CostsHandler) GetRegionCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, nil)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover resources", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -146,7 +162,9 @@ func (h *CostsHandler) GetRegionCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetEC2Costs returns EC2 instance costs
@@ -158,19 +176,22 @@ func (h *CostsHandler) GetEC2Costs(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"ec2"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover EC2 instances", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -193,7 +214,9 @@ func (h *CostsHandler) GetEC2Costs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetEBSCosts returns EBS volume costs
@@ -205,19 +228,22 @@ func (h *CostsHandler) GetEBSCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"ebs"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover EBS volumes", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -240,7 +266,9 @@ func (h *CostsHandler) GetEBSCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetRDSCosts returns RDS instance costs
@@ -252,19 +280,22 @@ func (h *CostsHandler) GetRDSCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"rds"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover RDS instances", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -287,7 +318,9 @@ func (h *CostsHandler) GetRDSCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetECSCosts returns ECS service costs
@@ -299,19 +332,22 @@ func (h *CostsHandler) GetECSCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"ecs"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover ECS services", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -334,7 +370,9 @@ func (h *CostsHandler) GetECSCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetEKSCosts returns EKS cluster costs
@@ -346,19 +384,22 @@ func (h *CostsHandler) GetEKSCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"eks"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover EKS clusters", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -381,7 +422,9 @@ func (h *CostsHandler) GetEKSCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetELBCosts returns Elastic Load Balancer costs
@@ -404,19 +447,22 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"elb"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover load balancers", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -444,7 +490,9 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetNATGatewayCosts returns NAT Gateway costs
@@ -456,19 +504,22 @@ func (h *CostsHandler) GetNATGatewayCosts(w http.ResponseWriter, r *http.Request
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"nat"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover NAT gateways", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -491,7 +542,9 @@ func (h *CostsHandler) GetNATGatewayCosts(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetElasticIPCosts returns Elastic IP costs
@@ -503,19 +556,22 @@ func (h *CostsHandler) GetElasticIPCosts(w http.ResponseWriter, r *http.Request)
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"eip"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover elastic IPs", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -538,7 +594,9 @@ func (h *CostsHandler) GetElasticIPCosts(w http.ResponseWriter, r *http.Request)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetSecretsCosts returns Secrets Manager costs
@@ -550,19 +608,22 @@ func (h *CostsHandler) GetSecretsCosts(w http.ResponseWriter, r *http.Request) {
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"secrets"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover secrets", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -585,7 +646,9 @@ func (h *CostsHandler) GetSecretsCosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // GetPublicIPv4Costs returns Public IPv4 address costs
@@ -597,19 +660,22 @@ func (h *CostsHandler) GetPublicIPv4Costs(w http.ResponseWriter, r *http.Request
 
 	regions, err := h.getRegions(ctx, regionFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	accounts, err := h.getAccounts(ctx, accountFilter)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"publicipv4"})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		h.logger.Error("failed to discover public IPv4 addresses", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -632,7 +698,9 @@ func (h *CostsHandler) GetPublicIPv4Costs(w http.ResponseWriter, r *http.Request
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }
 
 // getRegions returns regions to query - either from filter, discovery, or config

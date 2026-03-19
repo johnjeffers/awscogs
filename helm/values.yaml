@@ -13,3 +13,14 @@ serviceAccount:
   create: true
   annotations:
     eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/awscogs
+
+# Frontend config.yaml content (optional). When set, creates a ConfigMap
+# mounted into the container at /etc/awscogs/config.yaml and served at /config.yaml.
+# frontendConfig: |
+#   exclude:
+#     accounts:
+#       names:
+#         - "example-vendor*"
+#         - "*logs*"
+#     regions:
+#       - ap-east-1

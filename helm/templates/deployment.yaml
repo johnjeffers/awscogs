@@ -6,7 +6,7 @@ metadata:
   labels:
     app: awscogs
 spec:
-  replicas: "{{ .Values.deployment.replicas }}"
+  replicas: {{ .Values.deployment.replicas }}
   selector:
     matchLabels:
       app: awscogs
@@ -47,4 +47,14 @@ spec:
 {{- if .Values.deployment.resources }}
           resources:
 {{ toYaml .Values.deployment.resources | indent 12 }}
+{{- end }}
+{{- if .Values.frontendConfig }}
+          volumeMounts:
+            - name: frontend-config
+              mountPath: /etc/awscogs
+              readOnly: true
+      volumes:
+        - name: frontend-config
+          configMap:
+            name: awscogs-frontend-config
 {{- end }}

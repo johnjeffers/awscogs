@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 
 	"github.com/johnjeffers/awscogs/backend/internal/aws"
@@ -13,13 +14,15 @@ import (
 type ConfigHandler struct {
 	config    *config.Config
 	discovery *aws.Discovery
+	logger    *slog.Logger
 }
 
 // NewConfigHandler creates a new config handler
-func NewConfigHandler(cfg *config.Config, discovery *aws.Discovery) *ConfigHandler {
+func NewConfigHandler(cfg *config.Config, discovery *aws.Discovery, logger *slog.Logger) *ConfigHandler {
 	return &ConfigHandler{
 		config:    cfg,
 		discovery: discovery,
+		logger:    logger,
 	}
 }
 
@@ -54,7 +57,8 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	if h.config.AWS.DiscoverRegions {
 		regions, err = h.discovery.DiscoverRegions(ctx)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			h.logger.Error("failed to discover regions", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 	} else if len(h.config.AWS.Regions) > 0 {
@@ -69,7 +73,8 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	if h.config.AWS.DiscoverAccounts {
 		discoveredAccounts, err := h.discovery.DiscoverAccounts(ctx, h.config.AWS.AssumeRoleName)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			h.logger.Error("failed to discover accounts", "error", err)
+			http.Error(w, "internal server error", http.StatusInternalServerError)
 			return
 		}
 		accounts = make([]AccountInfo, len(discoveredAccounts))
@@ -97,5 +102,7 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
 }

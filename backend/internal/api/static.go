@@ -2,6 +2,7 @@ package api
 
 import (
 	"embed"
+	"fmt"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -19,7 +20,10 @@ type SPAHandler struct {
 
 // NewSPAHandler creates a handler for serving the embedded frontend.
 func NewSPAHandler() *SPAHandler {
-	dist, _ := fs.Sub(frontendFS, "dist")
+	dist, err := fs.Sub(frontendFS, "dist")
+	if err != nil {
+		panic(fmt.Sprintf("failed to get embedded frontend filesystem: %v", err))
+	}
 	return &SPAHandler{
 		fs: http.FileServer(http.FS(dist)),
 	}
@@ -29,7 +33,11 @@ func (h *SPAHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 
 	// Try to serve the file directly
-	dist, _ := fs.Sub(frontendFS, "dist")
+	dist, err := fs.Sub(frontendFS, "dist")
+	if err != nil {
+		http.Error(w, "frontend not available", http.StatusInternalServerError)
+		return
+	}
 
 	// Check if the path exists as a file
 	if path != "/" {

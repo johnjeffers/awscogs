@@ -1,0 +1,12 @@
+{{- if .Values.frontendConfig }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: awscogs-frontend-config
+  labels:
+    app: awscogs
+data:
+  config.yaml: |
+{{ .Values.frontendConfig | indent 4 }}
+{{- end }}

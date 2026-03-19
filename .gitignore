@@ -10,6 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 backend/bin
+frontend/public/config.yaml
 !backend/internal/api/dist/.gitkeep
 dist-ssr
 *.local

@@ -21,7 +21,7 @@ type Server struct {
 
 // NewServer creates a new API server
 func NewServer(cfg *config.Config, discovery *aws.Discovery, logger *slog.Logger) *Server {
-	router := NewRouter(cfg, discovery)
+	router := NewRouter(cfg, discovery, logger)
 
 	return &Server{
 		server: &http.Server{

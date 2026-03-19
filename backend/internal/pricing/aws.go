@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/pricing"
 	"github.com/aws/aws-sdk-go-v2/service/pricing/types"
+	"golang.org/x/sync/singleflight"
 
 	cogtypes "github.com/johnjeffers/awscogs/backend/internal/types"
 )
@@ -32,9 +33,10 @@ type AWSProvider struct {
 	cacheMu         sync.RWMutex
 	cacheExpiry     time.Time
 	cacheDuration   time.Duration
-	rateLimitMu     sync.Mutex    // Protects rate limiting
-	lastAPICall     time.Time     // Time of last API call
-	minCallInterval time.Duration // Minimum time between API calls
+	sfGroup         singleflight.Group // Prevents concurrent duplicate pricing API calls
+	rateLimitMu     sync.Mutex         // Protects rate limiting
+	lastAPICall     time.Time          // Time of last API call
+	minCallInterval time.Duration      // Minimum time between API calls
 }
 
 // NewAWSProvider creates a new AWS pricing provider
@@ -125,21 +127,35 @@ func (p *AWSProvider) GetEC2Price(ctx context.Context, region, instanceType stri
 	}
 	p.cacheMu.RUnlock()
 
-	// Fetch from API
-	price, err := p.fetchEC2Price(ctx, region, instanceType)
+	// Use singleflight to prevent concurrent duplicate API calls for the same key
+	v, err, _ := p.sfGroup.Do("ec2:"+cacheKey, func() (interface{}, error) {
+		// Double-check cache after acquiring singleflight
+		p.cacheMu.RLock()
+		if price, ok := p.ec2Cache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+			p.cacheMu.RUnlock()
+			return price, nil
+		}
+		p.cacheMu.RUnlock()
+
+		price, err := p.fetchEC2Price(ctx, region, instanceType)
+		if err != nil {
+			return cogtypes.CostValue(0), err
+		}
+
+		p.cacheMu.Lock()
+		p.ec2Cache[cacheKey] = price
+		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+			p.cacheExpiry = time.Now().Add(p.cacheDuration)
+		}
+		p.cacheMu.Unlock()
+
+		return price, nil
+	})
 	if err != nil {
 		return 0, err
 	}
 
-	// Update cache
-	p.cacheMu.Lock()
-	p.ec2Cache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return v.(cogtypes.CostValue), nil
 }
 
 // GetEBSPrice returns the hourly price for an EBS volume
@@ -157,20 +173,43 @@ func (p *AWSProvider) GetEBSPrice(ctx context.Context, region, volumeType string
 	p.cacheMu.RUnlock()
 
 	if !hasBase || !cacheValid {
-		var err error
-		basePrice, iopsPrice, tpPrice, err = p.fetchEBSPrices(ctx, region, volumeType)
+		// Use singleflight to prevent concurrent duplicate API calls
+		v, err, _ := p.sfGroup.Do("ebs:"+baseCacheKey, func() (interface{}, error) {
+			// Double-check cache
+			p.cacheMu.RLock()
+			bp, ok := p.ebsCache[baseCacheKey]
+			ip := p.ebsCache[baseCacheKey+":iops"]
+			tp := p.ebsCache[baseCacheKey+":throughput"]
+			valid := time.Now().Before(p.cacheExpiry)
+			p.cacheMu.RUnlock()
+
+			if ok && valid {
+				return [3]cogtypes.CostValue{bp, ip, tp}, nil
+			}
+
+			bp, ip, tp, err := p.fetchEBSPrices(ctx, region, volumeType)
+			if err != nil {
+				return [3]cogtypes.CostValue{}, err
+			}
+
+			p.cacheMu.Lock()
+			p.ebsCache[baseCacheKey] = bp
+			p.ebsCache[baseCacheKey+":iops"] = ip
+			p.ebsCache[baseCacheKey+":throughput"] = tp
+			if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+				p.cacheExpiry = time.Now().Add(p.cacheDuration)
+			}
+			p.cacheMu.Unlock()
+
+			return [3]cogtypes.CostValue{bp, ip, tp}, nil
+		})
 		if err != nil {
 			return 0, err
 		}
-
-		p.cacheMu.Lock()
-		p.ebsCache[baseCacheKey] = basePrice
-		p.ebsCache[baseCacheKey+":iops"] = iopsPrice
-		p.ebsCache[baseCacheKey+":throughput"] = tpPrice
-		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-			p.cacheExpiry = time.Now().Add(p.cacheDuration)
-		}
-		p.cacheMu.Unlock()
+		prices := v.([3]cogtypes.CostValue)
+		basePrice = prices[0]
+		iopsPrice = prices[1]
+		tpPrice = prices[2]
 	}
 
 	// Calculate total monthly cost, then convert to hourly
@@ -213,21 +252,35 @@ func (p *AWSProvider) GetRDSPrice(ctx context.Context, region, instanceClass, en
 	}
 	p.cacheMu.RUnlock()
 
-	// Fetch from API
-	price, err := p.fetchRDSPrice(ctx, region, instanceClass, engine, multiAZ)
+	// Use singleflight to prevent concurrent duplicate API calls for the same key
+	v, err, _ := p.sfGroup.Do("rds:"+cacheKey, func() (interface{}, error) {
+		// Double-check cache after acquiring singleflight
+		p.cacheMu.RLock()
+		if price, ok := p.rdsCache[cacheKey]; ok && time.Now().Before(p.cacheExpiry) {
+			p.cacheMu.RUnlock()
+			return price, nil
+		}
+		p.cacheMu.RUnlock()
+
+		price, err := p.fetchRDSPrice(ctx, region, instanceClass, engine, multiAZ)
+		if err != nil {
+			return cogtypes.CostValue(0), err
+		}
+
+		p.cacheMu.Lock()
+		p.rdsCache[cacheKey] = price
+		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+			p.cacheExpiry = time.Now().Add(p.cacheDuration)
+		}
+		p.cacheMu.Unlock()
+
+		return price, nil
+	})
 	if err != nil {
 		return 0, err
 	}
 
-	// Update cache
-	p.cacheMu.Lock()
-	p.rdsCache[cacheKey] = price
-	if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
-		p.cacheExpiry = time.Now().Add(p.cacheDuration)
-	}
-	p.cacheMu.Unlock()
-
-	return price, nil
+	return v.(cogtypes.CostValue), nil
 }
 
 // GetECSPrice returns the hourly price for an ECS Fargate service

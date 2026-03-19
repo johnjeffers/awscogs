@@ -1,7 +1,9 @@
 package api
 
 import (
+	"log/slog"
 	"net/http"
+	"os"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -13,7 +15,7 @@ import (
 )
 
 // NewRouter creates and configures the HTTP router
-func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
+func NewRouter(cfg *config.Config, discovery *aws.Discovery, logger *slog.Logger) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Base middleware (applied to all routes)
@@ -24,7 +26,7 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
-		AllowCredentials: true,
+		AllowCredentials: false,
 		MaxAge:           300,
 	}))
 
@@ -39,8 +41,8 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 	})
 
 	// Handlers
-	costsHandler := handlers.NewCostsHandler(cfg, discovery)
-	configHandler := handlers.NewConfigHandler(cfg, discovery)
+	costsHandler := handlers.NewCostsHandler(cfg, discovery, logger)
+	configHandler := handlers.NewConfigHandler(cfg, discovery, logger)
 
 	// Routes (with logging)
 	r.Route("/api/v1", func(r chi.Router) {
@@ -64,6 +66,15 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery) *chi.Mux {
 		r.Get("/costs/secrets", costsHandler.GetSecretsCosts)
 		r.Get("/costs/publicipv4", costsHandler.GetPublicIPv4Costs)
 	})
+
+	// Serve config.yaml from mounted ConfigMap if available, otherwise fall through to embedded SPA
+	configPath := "/etc/awscogs/config.yaml"
+	if _, err := os.Stat(configPath); err == nil {
+		r.Get("/config.yaml", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "text/yaml; charset=utf-8")
+			http.ServeFile(w, r, configPath)
+		})
+	}
 
 	// Serve embedded frontend for all other routes
 	r.Handle("/*", NewSPAHandler())
