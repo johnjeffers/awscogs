@@ -1,7 +1,8 @@
 ---
 deployment:
   replicas: 1
-  image: jjeffers/awscogs:v0.1.0
+  image: ghcr.io/johnjeffers/awscogs
+  tag: latest
   resources: {}
   env: {}
 
