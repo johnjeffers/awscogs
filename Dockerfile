@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # Build backend
-FROM golang:1.25-alpine AS backend-builder
+FROM golang:1.26-alpine AS backend-builder
 ARG VERSION=dev
 ARG GIT_COMMIT=unknown
 ARG BUILD_TIME=unknown
