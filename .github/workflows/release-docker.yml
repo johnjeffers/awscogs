@@ -1,0 +1,52 @@
+name: Release Docker Image
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  release-docker:
+    runs-on: ubuntu-latest
+    env:
+      OWNER: ${{ github.repository_owner }}
+      ACTOR: ${{ github.actor }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null)
+            if [ -z "$TAG" ]; then
+              echo "::error::No v* tags found"
+              exit 1
+            fi
+            git checkout "$TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$ACTOR" --password-stdin
+
+      - name: Build and push
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          IMAGE="ghcr.io/$OWNER/awscogs"
+          make docker-build IMAGE_NAME="$IMAGE" VERSION="$TAG"
+          docker push "$IMAGE:$TAG"
+          docker push "$IMAGE:latest"
