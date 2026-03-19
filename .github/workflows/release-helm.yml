@@ -14,11 +14,30 @@ jobs:
   release-helm:
     runs-on: ubuntu-latest
     env:
-      VERSION: ${{ github.ref_name }}
       OWNER: ${{ github.repository_owner }}
       ACTOR: ${{ github.actor }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            TAG=$(git describe --tags --match 'v*' --abbrev=0 2>/dev/null)
+            if [ -z "$TAG" ]; then
+              echo "::error::No v* tags found"
+              exit 1
+            fi
+            git checkout "$TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Install Helm
         uses: azure/setup-helm@v4
@@ -28,7 +47,12 @@ jobs:
 
       - name: Set chart version from tag
         id: version
-        run: echo "version=${VERSION#v}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Log resolved tag
+        run: echo "Releasing chart version ${{ steps.version.outputs.version }} from tag ${{ steps.tag.outputs.tag }}"
 
       - name: Update Chart.yaml version
         run: |
