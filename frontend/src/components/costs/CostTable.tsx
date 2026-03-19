@@ -1203,7 +1203,9 @@ export const CostTable: React.FC<CostTableProps> = ({
                   )}
                 </span>
               </th>
-              <CostGroupHeader
+              <GroupHeader
+                label="Cost"
+                colSpan={3}
                 sortKey="hourlyCost"
                 currentSort={elbSort}
                 onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
@@ -1222,7 +1224,11 @@ export const CostTable: React.FC<CostTableProps> = ({
                 currentSort={elbSort}
                 onSort={(k) => handleSort(setElbSort, elbSort, k, () => setElbPage(1))}
               />
-              <CostSubHeaders />
+              <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">Base/hr</th>
+              <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">LCU/hr</th>
+              <th className="px-6 py-2 text-right text-xs font-medium text-gray-400 tracking-wider">
+                {usageWindow === '30d' ? 'Total (30d)' : usageWindow === '24h' ? 'Total (24h)' : 'Total/hr'}
+              </th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
@@ -1294,15 +1300,27 @@ export const CostTable: React.FC<CostTableProps> = ({
                     formatBytes(lb.bandwidthBytes)
                   )}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {formatCost(lb.hourlyCost)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {formatCost(dailyCost(lb.hourlyCost), 2)}
-                </td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                  {formatCost(monthlyCost(lb.hourlyCost), 2)}
-                </td>
+                {(() => {
+                  const windowHours = usageWindow === '30d' ? 730 : usageWindow === '24h' ? 24 : 1;
+                  const baseHr = lb.baseHourlyCost || 0;
+                  const lcuHr = lb.lcuHourlyCost || 0;
+                  const totalCost = (baseHr + lcuHr) * windowHours;
+                  return (
+                    <>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                        {formatCost(baseHr)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-right">
+                        {lcuHr > 0 ? formatCost(lcuHr) : (
+                          <span className="text-gray-300">{lb.type === 'classic' ? 'N/A' : '--'}</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 text-right">
+                        {formatCost(totalCost, windowHours > 1 ? 2 : 4)}
+                      </td>
+                    </>
+                  );
+                })()}
               </tr>
             ))}
           </tbody>

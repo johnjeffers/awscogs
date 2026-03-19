@@ -23,8 +23,8 @@ type Provider interface {
 	// GetEKSPrice returns the hourly price for an EKS cluster control plane
 	GetEKSPrice(ctx context.Context, region string) (types.CostValue, error)
 
-	// GetELBPrice returns the hourly price for a load balancer by type
-	GetELBPrice(ctx context.Context, region, lbType string) (types.CostValue, error)
+	// GetELBPrice returns the base hourly price and per-LCU/NLCU price for a load balancer
+	GetELBPrice(ctx context.Context, region, lbType string) (base, perLCU types.CostValue, err error)
 
 	// GetNATGatewayPrice returns the hourly price for a NAT Gateway
 	GetNATGatewayPrice(ctx context.Context, region string) (types.CostValue, error)

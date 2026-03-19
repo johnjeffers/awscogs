@@ -123,6 +123,9 @@ export interface LoadBalancer {
   scheme: string;
   state: string;
   hourlyCost: number;
+  baseHourlyCost: number;
+  lcuHourlyCost: number;
+  consumedLcus: number;
   usageWindow?: string;
   usageStart?: string;
   usageEnd?: string;

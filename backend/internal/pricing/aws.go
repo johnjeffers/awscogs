@@ -26,7 +26,8 @@ type AWSProvider struct {
 	ecsCache        map[string]cogtypes.CostValue // key: "region:launchType"
 	rdsCache        map[string]cogtypes.CostValue // key: "region:instanceClass:engine:multiAZ"
 	eksCache        map[string]cogtypes.CostValue // key: "region"
-	elbCache        map[string]cogtypes.CostValue // key: "region:lbType"
+	elbCache        map[string]cogtypes.CostValue // key: "region:lbType" (base hourly)
+	elbLCUCache     map[string]cogtypes.CostValue // key: "region:lbType" (per-LCU rate)
 	natCache        map[string]cogtypes.CostValue // key: "region"
 	eipCache        map[string]cogtypes.CostValue // key: "region:associated"
 	secretCache     map[string]cogtypes.CostValue // key: "region"
@@ -70,6 +71,7 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes, rateLimitPerSecon
 		rdsCache:        make(map[string]cogtypes.CostValue),
 		eksCache:        make(map[string]cogtypes.CostValue),
 		elbCache:        make(map[string]cogtypes.CostValue),
+		elbLCUCache:     make(map[string]cogtypes.CostValue),
 		natCache:        make(map[string]cogtypes.CostValue),
 		eipCache:        make(map[string]cogtypes.CostValue),
 		secretCache:     make(map[string]cogtypes.CostValue),
@@ -294,12 +296,44 @@ func (p *AWSProvider) GetEKSPrice(ctx context.Context, region string) (cogtypes.
 	})
 }
 
-// GetELBPrice returns the hourly price for a load balancer by type
-func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (cogtypes.CostValue, error) {
+// GetELBPrice returns the base hourly price and per-LCU/NLCU price for a load balancer
+func (p *AWSProvider) GetELBPrice(ctx context.Context, region, lbType string) (base, perLCU cogtypes.CostValue, err error) {
 	cacheKey := fmt.Sprintf("%s:%s", region, lbType)
-	return p.getCachedPrice(p.elbCache, cacheKey, "elb:"+cacheKey, func() (cogtypes.CostValue, error) {
-		return p.fetchELBPrice(ctx, region, lbType)
+
+	// Use singleflight to fetch both prices together
+	v, err, _ := p.sfGroup.Do("elb:"+cacheKey, func() (any, error) {
+		// Check cache
+		p.cacheMu.RLock()
+		b, hasBase := p.elbCache[cacheKey]
+		l := p.elbLCUCache[cacheKey]
+		valid := time.Now().Before(p.cacheExpiry)
+		p.cacheMu.RUnlock()
+
+		if hasBase && valid {
+			return [2]cogtypes.CostValue{b, l}, nil
+		}
+
+		b, l, err := p.fetchELBPrice(ctx, region, lbType)
+		if err != nil {
+			return [2]cogtypes.CostValue{}, err
+		}
+
+		p.cacheMu.Lock()
+		p.elbCache[cacheKey] = b
+		p.elbLCUCache[cacheKey] = l
+		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+			p.cacheExpiry = time.Now().Add(p.cacheDuration)
+		}
+		p.cacheMu.Unlock()
+
+		return [2]cogtypes.CostValue{b, l}, nil
 	})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	prices := v.([2]cogtypes.CostValue)
+	return prices[0], prices[1], nil
 }
 
 // GetNATGatewayPrice returns the hourly price for a NAT Gateway
@@ -344,6 +378,7 @@ func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.rdsCache = make(map[string]cogtypes.CostValue)
 	p.eksCache = make(map[string]cogtypes.CostValue)
 	p.elbCache = make(map[string]cogtypes.CostValue)
+	p.elbLCUCache = make(map[string]cogtypes.CostValue)
 	p.natCache = make(map[string]cogtypes.CostValue)
 	p.eipCache = make(map[string]cogtypes.CostValue)
 	p.secretCache = make(map[string]cogtypes.CostValue)
@@ -623,7 +658,6 @@ func (p *AWSProvider) fetchEKSPrice(ctx context.Context, region string) (cogtype
 		Filters: []types.Filter{
 			termFilter("productFamily", "Compute"),
 			termFilter("location", locationName),
-			termFilter("locationType", "AWS Region"),
 			termFilter("operation", "CreateOperation"),
 		},
 		MaxResults: aws.Int32(10),
@@ -639,19 +673,22 @@ func (p *AWSProvider) fetchEKSPrice(ctx context.Context, region string) (cogtype
 	return parsePriceFromProduct(output.PriceList[0])
 }
 
-// fetchELBPrice queries the Pricing API for load balancer hourly pricing
-// Confirmed from AWSELB bulk pricing data:
-//   - ALB: productFamily=Load Balancer-Application, usagetype=LoadBalancerUsage, group=ELB:Balancing
-//   - NLB: productFamily=Load Balancer-Network, usagetype=LoadBalancerUsage, group=ELB:Balancing
-//   - CLB: productFamily=Load Balancer, usagetype=LoadBalancerUsage, group=ELB:Balancing
-func (p *AWSProvider) fetchELBPrice(ctx context.Context, region, lbType string) (cogtypes.CostValue, error) {
+// fetchELBPrice queries the Pricing API for load balancer base hourly and per-LCU pricing
+// Verified from AWSELB bulk pricing data:
+//   - ALB base: productFamily=Load Balancer-Application, usagetype=LoadBalancerUsage
+//   - ALB LCU:  productFamily=Load Balancer-Application, usagetype=LCUUsage
+//   - NLB base: productFamily=Load Balancer-Network, usagetype=LoadBalancerUsage
+//   - NLB LCU:  productFamily=Load Balancer-Network, usagetype=LCUUsage
+//   - CLB base: productFamily=Load Balancer, usagetype=LoadBalancerUsage
+//   - CLB:      no LCU product (uses per-GB data processing instead)
+func (p *AWSProvider) fetchELBPrice(ctx context.Context, region, lbType string) (base, perLCU cogtypes.CostValue, err error) {
 	locationName, ok := regionToLocation[region]
 	if !ok {
-		return 0, fmt.Errorf("unknown region: %s", region)
+		return 0, 0, fmt.Errorf("unknown region: %s", region)
 	}
 
 	if err := p.waitForRateLimit(ctx); err != nil {
-		return 0, fmt.Errorf("rate limit: %w", err)
+		return 0, 0, fmt.Errorf("rate limit: %w", err)
 	}
 
 	// Map load balancer type to pricing API product family
@@ -670,28 +707,44 @@ func (p *AWSProvider) fetchELBPrice(ctx context.Context, region, lbType string) 
 		Filters: []types.Filter{
 			termFilter("productFamily", productFamily),
 			termFilter("location", locationName),
-			termFilter("locationType", "AWS Region"),
 		},
 		MaxResults: aws.Int32(20),
 	})
 	if err != nil {
-		return 0, fmt.Errorf("GetProducts for ELB %s: %w", lbType, err)
-	}
-
-	// Find the base hourly product (usagetype ends with "LoadBalancerUsage", not LCU/Reserved/TS)
-	for _, pl := range output.PriceList {
-		usagetype := getProductAttribute(pl, "usagetype")
-		if strings.HasSuffix(usagetype, "LoadBalancerUsage") {
-			return parsePriceFromProduct(pl)
-		}
+		return 0, 0, fmt.Errorf("GetProducts for ELB %s: %w", lbType, err)
 	}
 
 	if len(output.PriceList) == 0 {
-		return 0, fmt.Errorf("no pricing found for ELB %s in %s", lbType, region)
+		return 0, 0, fmt.Errorf("no pricing found for ELB %s in %s", lbType, region)
 	}
 
-	// Fallback to first result
-	return parsePriceFromProduct(output.PriceList[0])
+	// Parse all products to find base hourly and LCU rates
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		price, parseErr := parsePriceFromProduct(pl)
+		if parseErr != nil {
+			continue
+		}
+
+		// Skip Outposts, Trust Store, and Reserved products
+		if strings.Contains(usagetype, "Outposts") ||
+			strings.Contains(usagetype, "TS-") ||
+			strings.Contains(usagetype, "Reserved") {
+			continue
+		}
+
+		if usagetype == "LoadBalancerUsage" || strings.HasSuffix(usagetype, "-LoadBalancerUsage") {
+			base = price
+		} else if usagetype == "LCUUsage" || strings.HasSuffix(usagetype, "-LCUUsage") {
+			perLCU = price
+		}
+	}
+
+	if base == 0 {
+		return 0, 0, fmt.Errorf("no base hourly pricing found for ELB %s in %s", lbType, region)
+	}
+
+	return base, perLCU, nil
 }
 
 // fetchNATGatewayPrice queries the Pricing API for NAT Gateway hourly pricing

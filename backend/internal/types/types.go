@@ -90,7 +90,10 @@ type LoadBalancer struct {
 	Type                string    `json:"type"`   // application, network, classic
 	Scheme              string    `json:"scheme"` // internet-facing, internal
 	State               string    `json:"state"`
-	HourlyCost          CostValue `json:"hourlyCost"`
+	HourlyCost          CostValue `json:"hourlyCost"`          // Total: base + LCU
+	BaseHourlyCost      CostValue `json:"baseHourlyCost"`      // Fixed hourly charge
+	LCUHourlyCost       CostValue `json:"lcuHourlyCost"`       // LCU/NLCU-based hourly charge
+	ConsumedLCUs        float64   `json:"consumedLcus"`        // Average consumed LCUs per hour
 	UsageWindow         string    `json:"usageWindow,omitempty"`
 	UsageStart          string    `json:"usageStart,omitempty"`
 	UsageEnd            string    `json:"usageEnd,omitempty"`

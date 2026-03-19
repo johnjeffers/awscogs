@@ -19,18 +19,29 @@ func main() {
 	configPath := flag.String("config", "", "Path to config file")
 	flag.Parse()
 
-	// Setup logger
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-	slog.SetDefault(logger)
-
-	// Load config
+	// Load config first so we can use the log level
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		logger.Error("failed to load config", "error", err)
+		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
 	}
+
+	// Setup logger with configured level
+	var logLevel slog.Level
+	switch cfg.Log.Level {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "warn":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: logLevel,
+	}))
+	slog.SetDefault(logger)
 
 	// Create pricing provider
 	ctx := context.Background()

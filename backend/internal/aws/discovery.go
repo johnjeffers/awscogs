@@ -74,6 +74,7 @@ type elbUsageData struct {
 	RequestMetricName   string
 	BandwidthBytes      float64
 	BandwidthMetricName string
+	AvgConsumedLCUs     float64 // Average consumed LCUs per hour
 	Status              string
 	Error               string
 }
@@ -898,10 +899,11 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 				state = string(lb.State.Code)
 			}
 
-			// Get pricing for active load balancers
-			var hourlyCost types.CostValue
+			// Get base + LCU pricing for active load balancers
+			var baseHourlyCost, lcuHourlyCost types.CostValue
+			var consumedLCUs float64
 			if state == "active" {
-				price, err := d.pricingProvider.GetELBPrice(ctx, region, lbType)
+				base, perLCU, err := d.pricingProvider.GetELBPrice(ctx, region, lbType)
 				if err != nil {
 					d.logger.Warn("failed to get ELB price",
 						"name", name,
@@ -909,20 +911,33 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 						"region", region,
 						"error", err)
 				} else {
-					hourlyCost = price
+					baseHourlyCost = base
+
+					// Fetch ConsumedLCUs from CloudWatch (1h average) for ALB/NLB
+					if perLCU > 0 {
+						meta := getELBMetricMeta(types.LoadBalancer{Type: lbType, ARN: arn, Name: name})
+						avgLCUs := d.fetchConsumedLCUs(ctx, cloudwatch.NewFromConfig(cfg), meta)
+						if avgLCUs > 0 {
+							consumedLCUs = avgLCUs
+							lcuHourlyCost = types.CostValue(avgLCUs) * perLCU
+						}
+					}
 				}
 			}
 
 			loadBalancers = append(loadBalancers, types.LoadBalancer{
-				AccountID:   accountID,
-				AccountName: accountName,
-				Region:      region,
-				Name:        name,
-				ARN:         arn,
-				Type:        lbType,
-				Scheme:      scheme,
-				State:       state,
-				HourlyCost:  hourlyCost,
+				AccountID:      accountID,
+				AccountName:    accountName,
+				Region:         region,
+				Name:           name,
+				ARN:            arn,
+				Type:           lbType,
+				Scheme:         scheme,
+				State:          state,
+				HourlyCost:     baseHourlyCost + lcuHourlyCost,
+				BaseHourlyCost: baseHourlyCost,
+				LCUHourlyCost:  lcuHourlyCost,
+				ConsumedLCUs:   consumedLCUs,
 			})
 		}
 	}
@@ -946,28 +961,29 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 				scheme = *lb.Scheme
 			}
 
-			// Get pricing for classic load balancers
-			price, err := d.pricingProvider.GetELBPrice(ctx, region, "classic")
-			var hourlyCost types.CostValue
+			// Get pricing for classic load balancers (no LCU — CLB uses per-GB data processing)
+			base, _, err := d.pricingProvider.GetELBPrice(ctx, region, "classic")
+			var baseHourlyCost types.CostValue
 			if err != nil {
 				d.logger.Warn("failed to get CLB price",
 					"name", name,
 					"region", region,
 					"error", err)
 			} else {
-				hourlyCost = price
+				baseHourlyCost = base
 			}
 
 			loadBalancers = append(loadBalancers, types.LoadBalancer{
-				AccountID:   accountID,
-				AccountName: accountName,
-				Region:      region,
-				Name:        name,
-				ARN:         "", // CLB doesn't have ARN in the same way
-				Type:        "classic",
-				Scheme:      scheme,
-				State:       "active", // CLB doesn't have state in the same way
-				HourlyCost:  hourlyCost,
+				AccountID:      accountID,
+				AccountName:    accountName,
+				Region:         region,
+				Name:           name,
+				ARN:            "", // CLB doesn't have ARN in the same way
+				Type:           "classic",
+				Scheme:         scheme,
+				State:          "active", // CLB doesn't have state in the same way
+				HourlyCost:     baseHourlyCost,
+				BaseHourlyCost: baseHourlyCost,
 			})
 		}
 	}
@@ -1634,6 +1650,7 @@ type elbMetricMeta struct {
 	dimensionValue  string
 	volumeMetric    string
 	bandwidthMetric string
+	lcuMetric       string // ConsumedLCUs for ALB/NLB, empty for CLB
 }
 
 // getELBMetricMeta returns CloudWatch metric metadata for a load balancer
@@ -1647,9 +1664,10 @@ func getELBMetricMeta(lb types.LoadBalancer) elbMetricMeta {
 			dimensionValue:  extractLBResource(lb.ARN),
 			volumeMetric:    "NewFlowCount",
 			bandwidthMetric: "ProcessedBytes",
+			lcuMetric:       "ConsumedLCUs",
 		}
 	case "classic":
-		// CLB: use load balancer name as dimension
+		// CLB: use load balancer name as dimension (no LCU metric)
 		return elbMetricMeta{
 			namespace:       "AWS/ELB",
 			dimensionName:   "LoadBalancerName",
@@ -1665,6 +1683,7 @@ func getELBMetricMeta(lb types.LoadBalancer) elbMetricMeta {
 			dimensionValue:  extractLBResource(lb.ARN),
 			volumeMetric:    "RequestCount",
 			bandwidthMetric: "ProcessedBytes",
+			lcuMetric:       "ConsumedLCUs",
 		}
 	}
 }
@@ -1677,6 +1696,59 @@ func extractLBResource(arn string) string {
 		return arn[idx+len(prefix):]
 	}
 	return arn
+}
+
+// fetchConsumedLCUs fetches the 1h average ConsumedLCUs from CloudWatch for a single LB.
+// Used during discovery to compute LCU costs for totals without requiring explicit usage enrichment.
+func (d *Discovery) fetchConsumedLCUs(ctx context.Context, client *cloudwatch.Client, meta elbMetricMeta) float64 {
+	if meta.lcuMetric == "" {
+		return 0
+	}
+
+	now := time.Now().UTC()
+	input := &cloudwatch.GetMetricDataInput{
+		StartTime: aws.Time(now.Add(-1 * time.Hour)),
+		EndTime:   aws.Time(now),
+		MetricDataQueries: []cwtypes.MetricDataQuery{
+			{
+				Id: aws.String("lcu"),
+				MetricStat: &cwtypes.MetricStat{
+					Metric: &cwtypes.Metric{
+						Namespace:  aws.String(meta.namespace),
+						MetricName: aws.String(meta.lcuMetric),
+						Dimensions: []cwtypes.Dimension{
+							{Name: aws.String(meta.dimensionName), Value: aws.String(meta.dimensionValue)},
+						},
+					},
+					Period: aws.Int32(3600),
+					Stat:   aws.String("Sum"),
+				},
+			},
+		},
+	}
+
+	output, err := client.GetMetricData(ctx, input)
+	if err != nil {
+		d.logger.Debug("failed to fetch ConsumedLCUs", "lb", meta.dimensionValue, "error", err)
+		return 0
+	}
+
+	var sum float64
+	var count int
+	for _, result := range output.MetricDataResults {
+		if result.Id == nil || *result.Id != "lcu" {
+			continue
+		}
+		for _, v := range result.Values {
+			sum += v
+			count++
+		}
+	}
+
+	if count == 0 {
+		return 0
+	}
+	return sum / float64(count)
 }
 
 // parseUsageWindow returns the duration and CloudWatch period for a usage window string
@@ -1772,6 +1844,21 @@ func (d *Discovery) EnrichELBUsage(ctx context.Context, loadBalancers []types.Lo
 					lb.RequestMetricName = usage.RequestMetricName
 					lb.BandwidthBytes = usage.BandwidthBytes
 					lb.BandwidthMetricName = usage.BandwidthMetricName
+					lb.ConsumedLCUs = usage.AvgConsumedLCUs
+					// Fetch per-LCU rate and compute LCU cost
+					if usage.AvgConsumedLCUs > 0 {
+						_, perLCU, err := d.pricingProvider.GetELBPrice(ctx, lb.Region, lb.Type)
+						if err != nil {
+							d.logger.Warn("failed to get ELB LCU rate (cached path)",
+								"lb", lbID,
+								"region", lb.Region,
+								"type", lb.Type,
+								"error", err)
+						} else {
+							lb.LCUHourlyCost = types.CostValue(usage.AvgConsumedLCUs) * perLCU
+							lb.HourlyCost = lb.BaseHourlyCost + lb.LCUHourlyCost
+						}
+					}
 					lb.UsageStatus = usage.Status
 					lb.UsageError = usage.Error
 				}
@@ -1837,6 +1924,26 @@ func (d *Discovery) EnrichELBUsage(ctx context.Context, loadBalancers []types.Lo
 				loadBalancers[i].RequestMetricName = usage.RequestMetricName
 				loadBalancers[i].BandwidthBytes = usage.BandwidthBytes
 				loadBalancers[i].BandwidthMetricName = usage.BandwidthMetricName
+				loadBalancers[i].ConsumedLCUs = usage.AvgConsumedLCUs
+				// Fetch per-LCU rate and compute LCU cost
+				if usage.AvgConsumedLCUs > 0 {
+					_, perLCU, pErr := d.pricingProvider.GetELBPrice(ctx, loadBalancers[i].Region, loadBalancers[i].Type)
+					if pErr != nil {
+						d.logger.Warn("failed to get ELB LCU rate",
+							"lb", meta.dimensionValue,
+							"region", loadBalancers[i].Region,
+							"type", loadBalancers[i].Type,
+							"error", pErr)
+					} else {
+						d.logger.Debug("computed LCU cost",
+							"lb", meta.dimensionValue,
+							"avgLCUs", usage.AvgConsumedLCUs,
+							"perLCU", perLCU,
+							"lcuCost", types.CostValue(usage.AvgConsumedLCUs)*perLCU)
+						loadBalancers[i].LCUHourlyCost = types.CostValue(usage.AvgConsumedLCUs) * perLCU
+						loadBalancers[i].HourlyCost = loadBalancers[i].BaseHourlyCost + loadBalancers[i].LCUHourlyCost
+					}
+				}
 				loadBalancers[i].UsageStatus = usage.Status
 				loadBalancers[i].UsageError = usage.Error
 				mu.Unlock()
@@ -1862,36 +1969,55 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 		Value: aws.String(meta.dimensionValue),
 	}
 
-	input := &cloudwatch.GetMetricDataInput{
-		StartTime: aws.Time(start),
-		EndTime:   aws.Time(end),
-		ScanBy:    cwtypes.ScanByTimestampDescending,
-		MetricDataQueries: []cwtypes.MetricDataQuery{
-			{
-				Id: aws.String("volume"),
-				MetricStat: &cwtypes.MetricStat{
-					Metric: &cwtypes.Metric{
-						Namespace:  aws.String(meta.namespace),
-						MetricName: aws.String(meta.volumeMetric),
-						Dimensions: []cwtypes.Dimension{dimension},
-					},
-					Period: aws.Int32(period),
-					Stat:   aws.String("Sum"),
+	queries := []cwtypes.MetricDataQuery{
+		{
+			Id: aws.String("volume"),
+			MetricStat: &cwtypes.MetricStat{
+				Metric: &cwtypes.Metric{
+					Namespace:  aws.String(meta.namespace),
+					MetricName: aws.String(meta.volumeMetric),
+					Dimensions: []cwtypes.Dimension{dimension},
 				},
-			},
-			{
-				Id: aws.String("bandwidth"),
-				MetricStat: &cwtypes.MetricStat{
-					Metric: &cwtypes.Metric{
-						Namespace:  aws.String(meta.namespace),
-						MetricName: aws.String(meta.bandwidthMetric),
-						Dimensions: []cwtypes.Dimension{dimension},
-					},
-					Period: aws.Int32(period),
-					Stat:   aws.String("Sum"),
-				},
+				Period: aws.Int32(period),
+				Stat:   aws.String("Sum"),
 			},
 		},
+		{
+			Id: aws.String("bandwidth"),
+			MetricStat: &cwtypes.MetricStat{
+				Metric: &cwtypes.Metric{
+					Namespace:  aws.String(meta.namespace),
+					MetricName: aws.String(meta.bandwidthMetric),
+					Dimensions: []cwtypes.Dimension{dimension},
+				},
+				Period: aws.Int32(period),
+				Stat:   aws.String("Sum"),
+			},
+		},
+	}
+
+	// Add ConsumedLCUs metric for ALB/NLB (not CLB)
+	// Use Sum with 1-hour period to get total LCU-hours consumed per hour
+	if meta.lcuMetric != "" {
+		queries = append(queries, cwtypes.MetricDataQuery{
+			Id: aws.String("lcu"),
+			MetricStat: &cwtypes.MetricStat{
+				Metric: &cwtypes.Metric{
+					Namespace:  aws.String(meta.namespace),
+					MetricName: aws.String(meta.lcuMetric),
+					Dimensions: []cwtypes.Dimension{dimension},
+				},
+				Period: aws.Int32(3600),
+				Stat:   aws.String("Sum"),
+			},
+		})
+	}
+
+	input := &cloudwatch.GetMetricDataInput{
+		StartTime:         aws.Time(start),
+		EndTime:           aws.Time(end),
+		ScanBy:            cwtypes.ScanByTimestampDescending,
+		MetricDataQueries: queries,
 	}
 
 	output, err := client.GetMetricData(ctx, input)
@@ -1908,12 +2034,23 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 		}
 	}
 
-	var volumeSum, bandwidthSum float64
+	var volumeSum, bandwidthSum, lcuSum float64
+	var lcuCount int
 	hasData := false
 
+	lcuResultFound := false
 	for _, result := range output.MetricDataResults {
 		if result.Id == nil {
 			continue
+		}
+		if *result.Id == "lcu" {
+			lcuResultFound = true
+			d.logger.Debug("ConsumedLCUs CloudWatch result",
+				"lb", meta.dimensionValue,
+				"statusCode", result.StatusCode,
+				"datapoints", len(result.Values),
+				"messages", result.Messages,
+			)
 		}
 		if result.StatusCode == cwtypes.StatusCodeInternalError {
 			continue
@@ -1925,8 +2062,18 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 				volumeSum += v
 			case "bandwidth":
 				bandwidthSum += v
+			case "lcu":
+				lcuSum += v
+				lcuCount++
 			}
 		}
+	}
+	if meta.lcuMetric != "" && !lcuResultFound {
+		d.logger.Warn("no ConsumedLCUs result in CloudWatch response",
+			"lb", meta.dimensionValue,
+			"namespace", meta.namespace,
+			"totalResults", len(output.MetricDataResults),
+		)
 	}
 
 	status := types.UsageStatusOK
@@ -1936,11 +2083,18 @@ func (d *Discovery) fetchLBUsage(ctx context.Context, client *cloudwatch.Client,
 		usageErr = "no datapoints in window"
 	}
 
+	// Compute average consumed LCUs per hour
+	var avgLCUs float64
+	if lcuCount > 0 {
+		avgLCUs = lcuSum / float64(lcuCount)
+	}
+
 	return elbUsageData{
 		RequestVolume:       volumeSum,
 		RequestMetricName:   meta.volumeMetric,
 		BandwidthBytes:      bandwidthSum,
 		BandwidthMetricName: meta.bandwidthMetric,
+		AvgConsumedLCUs:     avgLCUs,
 		Status:              status,
 		Error:               usageErr,
 	}
