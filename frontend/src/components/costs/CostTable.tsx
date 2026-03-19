@@ -419,6 +419,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (accounts && accounts.length > 0) {
     const paginatedAccounts = paginate(sortedAccounts, accountPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -475,14 +476,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={accountPage}
           totalItems={sortedAccounts.length}
           pageSize={pageSize}
           onPageChange={setAccountPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setAccountPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -490,6 +492,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (regions && regions.length > 0) {
     const paginatedRegions = paginate(sortedRegions, regionPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -544,14 +547,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={regionPage}
           totalItems={sortedRegions.length}
           pageSize={pageSize}
           onPageChange={setRegionPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setRegionPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -559,6 +563,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (ec2 && ec2.length > 0) {
     const paginatedEc2 = paginate(sortedEc2, ec2Page, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -651,14 +656,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={ec2Page}
           totalItems={sortedEc2.length}
           pageSize={pageSize}
           onPageChange={setEc2Page}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setEc2Page(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -666,6 +672,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (ebs && ebs.length > 0) {
     const paginatedEbs = paginate(sortedEbs, ebsPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -767,14 +774,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={ebsPage}
           totalItems={sortedEbs.length}
           pageSize={pageSize}
           onPageChange={setEbsPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setEbsPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -782,6 +790,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (ecs && ecs.length > 0) {
     const paginatedEcs = paginate(sortedEcs, ecsPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -892,14 +901,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={ecsPage}
           totalItems={sortedEcs.length}
           pageSize={pageSize}
           onPageChange={setEcsPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setEcsPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -907,6 +917,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (rds && rds.length > 0) {
     const paginatedRds = paginate(sortedRds, rdsPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1007,14 +1018,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={rdsPage}
           totalItems={sortedRds.length}
           pageSize={pageSize}
           onPageChange={setRdsPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setRdsPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -1022,6 +1034,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (eks && eks.length > 0) {
     const paginatedEks = paginate(sortedEks, eksPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1116,14 +1129,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={eksPage}
           totalItems={sortedEks.length}
           pageSize={pageSize}
           onPageChange={setEksPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setEksPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -1131,6 +1145,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (elb && elb.length > 0) {
     const paginatedElb = paginate(sortedElb, elbPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1325,14 +1340,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={elbPage}
           totalItems={sortedElb.length}
           pageSize={pageSize}
           onPageChange={setElbPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setElbPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -1340,6 +1356,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (nat && nat.length > 0) {
     const paginatedNat = paginate(sortedNat, natPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1440,14 +1457,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={natPage}
           totalItems={sortedNat.length}
           pageSize={pageSize}
           onPageChange={setNatPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setNatPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -1455,6 +1473,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (eip && eip.length > 0) {
     const paginatedEip = paginate(sortedEip, eipPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1549,14 +1568,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={eipPage}
           totalItems={sortedEip.length}
           pageSize={pageSize}
           onPageChange={setEipPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setEipPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -1564,6 +1584,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (secrets && secrets.length > 0) {
     const paginatedSecrets = paginate(sortedSecrets, secretsPage, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1628,14 +1649,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={secretsPage}
           totalItems={sortedSecrets.length}
           pageSize={pageSize}
           onPageChange={setSecretsPage}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setSecretsPage(1))}
         />
-      </div>
+      </>
     );
   }
 
@@ -1643,6 +1665,7 @@ export const CostTable: React.FC<CostTableProps> = ({
   if (publicipv4 && publicipv4.length > 0) {
     const paginatedPublicIpv4 = paginate(sortedPublicIpv4, publicIpv4Page, pageSize);
     return (
+      <>
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -1715,14 +1738,15 @@ export const CostTable: React.FC<CostTableProps> = ({
             ))}
           </tbody>
         </table>
-        <Pagination
+      </div>
+      <Pagination
           currentPage={publicIpv4Page}
           totalItems={sortedPublicIpv4.length}
           pageSize={pageSize}
           onPageChange={setPublicIpv4Page}
           onPageSizeChange={(size) => handlePageSizeChange(size, () => setPublicIpv4Page(1))}
         />
-      </div>
+      </>
     );
   }
 
