@@ -46,7 +46,7 @@ New in v0.2.0, the Load Balancers view can now query CloudWatch Metrics to get r
 | `AWSCOGS_CACHE_RESOURCE_TTL_MINUTES` | Resource discovery cache TTL in minutes                        | `5`                             |
 | `AWSCOGS_CACHE_ACCOUNT_TTL_MINUTES`  | Account/region discovery cache TTL in minutes                  | `60`                            |
 
-## Running the Docker image
+## Running the Docker image locally
 
 This command assumes that you have a valid SSO token in `~/.aws`
 
@@ -70,13 +70,22 @@ docker run \
 
 ## Helm Chart
 
-The [helm](helm) directory contains a sample helm chart you can use to deploy the app. You'll need to create an AWS IAM role with necessary permissions. Add the role ARN to `serviceAccount.annotations`.
+The [helm](helm) directory contains a simple helm chart you can use to deploy the app. You'll need to create an AWS IAM role with necessary permissions. Add the role ARN to `serviceAccount.annotations`.
+
+Create your local values file and deploy with:
+
+```sh
+helm upgrade --install awscogs oci://ghcr.io/johnjeffers/charts/awscogs \
+  --namespace awscogs \
+  --create-namespace \
+  -f values.yaml
+```
 
 ## Localdev
 
 ### Prerequisites
 
-- Go 1.25
+- Go 1.26
 - Node 25
 - Valid AWS credentials
 
@@ -126,16 +135,9 @@ This formats and lints both the backend (go fmt, go vet, staticcheck) and fronte
 
 Versions are derived from git tags matching `v*` and injected into the binary at build time.
 
-1. Tag the release:
+Tag the release and push the tag to kick off the helm and docker release workflows.
 
 ```sh
 git tag v0.x.x
+git push origin main --tags
 ```
-
-2. Build the Docker image:
-
-```sh
-make docker-build
-```
-
-This produces images tagged `jjeffers/awscogs:v0.x.x` and `jjeffers/awscogs:latest`.
