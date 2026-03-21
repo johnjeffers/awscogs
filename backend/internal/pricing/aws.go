@@ -1047,4 +1047,6 @@ var regionToLocation = map[string]string{
 	"me-south-1":     "Middle East (Bahrain)",
 	"me-central-1":   "Middle East (UAE)",
 	"sa-east-1":      "South America (Sao Paulo)",
+	"us-gov-west-1":  "AWS GovCloud (US-West)",
+	"us-gov-east-1":  "AWS GovCloud (US-East)",
 }

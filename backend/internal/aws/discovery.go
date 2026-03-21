@@ -57,6 +57,10 @@ type Discovery struct {
 	regionCache   *cacheEntry[[]string]
 	regionCacheMu sync.RWMutex
 
+	// GovCloud region discovery cache
+	govCloudRegionCache   *cacheEntry[[]string]
+	govCloudRegionCacheMu sync.RWMutex
+
 	// ELB usage cache - keyed by "accountID|region|window"
 	usageCache   map[string]cacheEntry[map[string]elbUsageData]
 	usageCacheMu sync.RWMutex
@@ -94,9 +98,66 @@ func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger, resourc
 
 // Account represents an AWS account configuration
 type Account struct {
-	ID      string
-	Name    string
-	RoleARN string
+	ID        string
+	Name      string
+	RoleARN   string
+	Partition string // AWS partition: "aws", "aws-us-gov", "aws-cn" (default: "aws")
+}
+
+// PartitionForRegion returns the AWS partition for a given region code
+func PartitionForRegion(region string) string {
+	if strings.HasPrefix(region, "us-gov-") {
+		return "aws-us-gov"
+	}
+	if strings.HasPrefix(region, "cn-") {
+		return "aws-cn"
+	}
+	return "aws"
+}
+
+// DefaultRegionForPartition returns the default region for a partition
+func DefaultRegionForPartition(partition string) string {
+	switch partition {
+	case "aws-us-gov":
+		return "us-gov-west-1"
+	case "aws-cn":
+		return "cn-north-1"
+	default:
+		return "us-east-1"
+	}
+}
+
+// arnPrefix returns the ARN prefix for a partition
+func arnPrefix(partition string) string {
+	switch partition {
+	case "aws-us-gov":
+		return "arn:aws-us-gov"
+	case "aws-cn":
+		return "arn:aws-cn"
+	default:
+		return "arn:aws"
+	}
+}
+
+// partitionFromARN extracts the partition from an ARN string
+func partitionFromARN(arn string) string {
+	// ARN format: arn:partition:service:region:account:resource
+	parts := strings.SplitN(arn, ":", 6)
+	if len(parts) >= 2 {
+		return parts[1]
+	}
+	return "aws"
+}
+
+// AccountPartition returns the effective partition for an account
+func (a Account) AccountPartition() string {
+	if a.Partition != "" {
+		return a.Partition
+	}
+	if a.RoleARN != "" {
+		return partitionFromARN(a.RoleARN)
+	}
+	return "aws"
 }
 
 // resourceCacheKey creates a cache key for a specific account/region/resourceType combination
@@ -143,6 +204,11 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 
 	for _, account := range accounts {
 		for _, region := range regions {
+			// Skip mismatched partition combinations (e.g., commercial account + GovCloud region)
+			if account.AccountPartition() != PartitionForRegion(region) {
+				continue
+			}
+
 			wg.Add(1)
 			go func(acc Account, reg string) {
 				defer wg.Done()
@@ -395,6 +461,51 @@ func (d *Discovery) DiscoverRegions(ctx context.Context) ([]string, error) {
 	return regions, nil
 }
 
+// DiscoverGovCloudRegions returns all enabled regions in the GovCloud partition
+// It uses the provided account's credentials to call DescribeRegions from within the GovCloud partition
+func (d *Discovery) DiscoverGovCloudRegions(ctx context.Context, account Account) ([]string, error) {
+	// Check cache first
+	d.govCloudRegionCacheMu.RLock()
+	if d.govCloudRegionCache != nil && time.Now().Before(d.govCloudRegionCache.expiresAt) {
+		regions := d.govCloudRegionCache.value
+		d.govCloudRegionCacheMu.RUnlock()
+		d.logger.Debug("returning cached govcloud regions", "count", len(regions))
+		return regions, nil
+	}
+	d.govCloudRegionCacheMu.RUnlock()
+
+	cfg, err := d.getConfigForAccount(ctx, account, DefaultRegionForPartition("aws-us-gov"))
+	if err != nil {
+		return nil, fmt.Errorf("loading govcloud config: %w", err)
+	}
+
+	ec2Client := ec2.NewFromConfig(cfg)
+	result, err := ec2Client.DescribeRegions(ctx, &ec2.DescribeRegionsInput{
+		AllRegions: aws.Bool(false),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("describing govcloud regions: %w", err)
+	}
+
+	regions := make([]string, 0, len(result.Regions))
+	for _, r := range result.Regions {
+		if r.RegionName != nil {
+			regions = append(regions, *r.RegionName)
+		}
+	}
+
+	// Cache the result
+	d.govCloudRegionCacheMu.Lock()
+	d.govCloudRegionCache = &cacheEntry[[]string]{
+		value:     regions,
+		expiresAt: time.Now().Add(d.accountTTL),
+	}
+	d.govCloudRegionCacheMu.Unlock()
+
+	d.logger.Info("discovered govcloud regions", "count", len(regions))
+	return regions, nil
+}
+
 // DiscoverAccounts returns all accounts from AWS Organizations with the specified assume role
 func (d *Discovery) DiscoverAccounts(ctx context.Context, assumeRoleName string) ([]Account, error) {
 	// Check cache first
@@ -439,13 +550,14 @@ func (d *Discovery) DiscoverAccounts(ctx context.Context, assumeRoleName string)
 			}
 
 			account := Account{
-				ID:   *acc.Id,
-				Name: *acc.Name,
+				ID:        *acc.Id,
+				Name:      *acc.Name,
+				Partition: "aws",
 			}
 
 			// For non-management accounts, construct the role ARN to assume
 			if *acc.Id != currentAccountID && assumeRoleName != "" {
-				account.RoleARN = fmt.Sprintf("arn:aws:iam::%s:role/%s", *acc.Id, assumeRoleName)
+				account.RoleARN = fmt.Sprintf("%s:iam::%s:role/%s", arnPrefix("aws"), *acc.Id, assumeRoleName)
 			}
 
 			accounts = append(accounts, account)

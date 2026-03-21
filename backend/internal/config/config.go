@@ -30,6 +30,16 @@ type AWSConfig struct {
 	AssumeRoleName   string          `yaml:"assumeRoleName"`   // Role name to assume into each account
 	Accounts         []AccountConfig `yaml:"accounts"`         // Manual account list (used if discoverAccounts is false)
 	Regions          []string        `yaml:"regions"`          // Manual region list (used if discoverRegions is false)
+	GovCloud         GovCloudConfig  `yaml:"govcloud"`         // GovCloud partition settings
+}
+
+// GovCloudConfig holds settings for the AWS GovCloud partition
+type GovCloudConfig struct {
+	Enabled         bool            `yaml:"enabled"`         // Enable GovCloud discovery
+	DiscoverRegions bool            `yaml:"discoverRegions"` // Auto-discover enabled GovCloud regions
+	Regions         []string        `yaml:"regions"`         // Explicit GovCloud region list
+	Accounts        []AccountConfig `yaml:"accounts"`        // GovCloud accounts (must have roleArn in aws-us-gov partition)
+	AssumeRoleName  string          `yaml:"assumeRoleName"`  // Role name for GovCloud Organizations assume role
 }
 
 // AccountConfig defines how to connect to a specific AWS account
@@ -158,6 +168,24 @@ func (c *Config) loadFromEnv() {
 			c.Cache.AccountTTLMinutes = t
 		}
 	}
+
+	// GovCloud environment variables
+	if govEnabled := os.Getenv("AWSCOGS_GOVCLOUD_ENABLED"); govEnabled != "" {
+		c.AWS.GovCloud.Enabled = govEnabled == "true" || govEnabled == "1"
+	}
+
+	if govRegions := os.Getenv("AWSCOGS_GOVCLOUD_REGIONS"); govRegions != "" {
+		c.AWS.GovCloud.Regions = strings.Split(govRegions, ",")
+		c.AWS.GovCloud.DiscoverRegions = false
+	}
+
+	if govDiscoverRegions := os.Getenv("AWSCOGS_GOVCLOUD_DISCOVER_REGIONS"); govDiscoverRegions != "" {
+		c.AWS.GovCloud.DiscoverRegions = govDiscoverRegions == "true" || govDiscoverRegions == "1"
+	}
+
+	if govAssumeRole := os.Getenv("AWSCOGS_GOVCLOUD_ASSUME_ROLE_NAME"); govAssumeRole != "" {
+		c.AWS.GovCloud.AssumeRoleName = govAssumeRole
+	}
 }
 
 // Validate checks the configuration for errors
@@ -173,6 +201,16 @@ func (c *Config) Validate() error {
 	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
 	if !validLevels[c.Log.Level] {
 		return fmt.Errorf("invalid log level: %s", c.Log.Level)
+	}
+
+	// Validate GovCloud config
+	if c.AWS.GovCloud.Enabled {
+		if len(c.AWS.GovCloud.Accounts) == 0 {
+			return fmt.Errorf("govcloud is enabled but no accounts are configured")
+		}
+		if !c.AWS.GovCloud.DiscoverRegions && len(c.AWS.GovCloud.Regions) == 0 {
+			return fmt.Errorf("govcloud is enabled but no regions configured and region discovery is disabled")
+		}
 	}
 
 	return nil

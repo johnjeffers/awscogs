@@ -710,79 +710,104 @@ func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]strin
 		return filter, nil
 	}
 
-	// If discovery enabled, discover regions
+	var regions []string
+
+	// Commercial regions
 	if h.config.AWS.DiscoverRegions {
-		return h.discovery.DiscoverRegions(ctx)
+		discovered, err := h.discovery.DiscoverRegions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		regions = append(regions, discovered...)
+	} else if len(h.config.AWS.Regions) > 0 {
+		regions = append(regions, h.config.AWS.Regions...)
 	}
 
-	// Fall back to configured regions
-	if len(h.config.AWS.Regions) > 0 {
-		return h.config.AWS.Regions, nil
+	// GovCloud regions
+	if h.config.AWS.GovCloud.Enabled {
+		govRegions, err := h.getGovCloudRegions(ctx)
+		if err != nil {
+			// Log but don't fail - commercial regions can still work
+			h.logger.Error("failed to get govcloud regions", "error", err)
+		} else {
+			regions = append(regions, govRegions...)
+		}
 	}
 
-	// Default fallback
-	return []string{"us-east-1"}, nil
+	if len(regions) == 0 {
+		return []string{"us-east-1"}, nil
+	}
+
+	return regions, nil
+}
+
+// getGovCloudRegions returns GovCloud regions from config or discovery
+func (h *CostsHandler) getGovCloudRegions(ctx context.Context) ([]string, error) {
+	if h.config.AWS.GovCloud.DiscoverRegions && len(h.config.AWS.GovCloud.Accounts) > 0 {
+		// Use first GovCloud account's credentials to discover regions
+		firstAccount := aws.Account{
+			Name:      h.config.AWS.GovCloud.Accounts[0].Name,
+			RoleARN:   h.config.AWS.GovCloud.Accounts[0].RoleARN,
+			Partition: "aws-us-gov",
+		}
+		return h.discovery.DiscoverGovCloudRegions(ctx, firstAccount)
+	}
+
+	if len(h.config.AWS.GovCloud.Regions) > 0 {
+		return h.config.AWS.GovCloud.Regions, nil
+	}
+
+	return nil, nil
 }
 
 // getAccounts returns accounts to query - either from filter, discovery, or config
 func (h *CostsHandler) getAccounts(ctx context.Context, filter []string) ([]aws.Account, error) {
-	// If discovery enabled, discover accounts
+	var accounts []aws.Account
+
+	// Commercial accounts
 	if h.config.AWS.DiscoverAccounts {
-		accounts, err := h.discovery.DiscoverAccounts(ctx, h.config.AWS.AssumeRoleName)
+		discovered, err := h.discovery.DiscoverAccounts(ctx, h.config.AWS.AssumeRoleName)
 		if err != nil {
 			return nil, err
 		}
-
-		// If filter specified, filter the discovered accounts
-		if len(filter) > 0 {
-			filterSet := make(map[string]bool)
-			for _, name := range filter {
-				filterSet[name] = true
-			}
-
-			var filtered []aws.Account
-			for _, acc := range accounts {
-				if filterSet[acc.Name] || filterSet[acc.ID] {
-					filtered = append(filtered, acc)
-				}
-			}
-			return filtered, nil
-		}
-
-		return accounts, nil
-	}
-
-	// Use manually configured accounts
-	if len(h.config.AWS.Accounts) > 0 {
-		accounts := make([]aws.Account, 0, len(h.config.AWS.Accounts))
+		accounts = append(accounts, discovered...)
+	} else if len(h.config.AWS.Accounts) > 0 {
 		for _, acc := range h.config.AWS.Accounts {
 			accounts = append(accounts, aws.Account{
 				Name:    acc.Name,
 				RoleARN: acc.RoleARN,
 			})
 		}
-
-		// If filter specified, filter the configured accounts
-		if len(filter) > 0 {
-			filterSet := make(map[string]bool)
-			for _, name := range filter {
-				filterSet[name] = true
-			}
-
-			var filtered []aws.Account
-			for _, acc := range accounts {
-				if filterSet[acc.Name] {
-					filtered = append(filtered, acc)
-				}
-			}
-			return filtered, nil
-		}
-
-		return accounts, nil
 	}
 
-	// Default: use current credentials (empty account list triggers default behavior)
-	return nil, nil
+	// GovCloud accounts
+	if h.config.AWS.GovCloud.Enabled {
+		for _, acc := range h.config.AWS.GovCloud.Accounts {
+			accounts = append(accounts, aws.Account{
+				Name:      acc.Name,
+				RoleARN:   acc.RoleARN,
+				Partition: "aws-us-gov",
+			})
+		}
+	}
+
+	// If filter specified, filter all accounts
+	if len(filter) > 0 {
+		filterSet := make(map[string]bool)
+		for _, name := range filter {
+			filterSet[name] = true
+		}
+
+		var filtered []aws.Account
+		for _, acc := range accounts {
+			if filterSet[acc.Name] || filterSet[acc.ID] {
+				filtered = append(filtered, acc)
+			}
+		}
+		return filtered, nil
+	}
+
+	return accounts, nil
 }
 
 // parseArrayParam parses a comma-separated query parameter into a slice
