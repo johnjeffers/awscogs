@@ -102,7 +102,8 @@ export AWS_PROFILE=profile_name
 Start the app:
 
 ```sh
-make install && make dev
+make install build
+make dev
 ```
 
 Running in dev mode exposes the Vite dev server on port 3000.
