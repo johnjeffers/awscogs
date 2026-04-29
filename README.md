@@ -119,6 +119,17 @@ Running in dev mode exposes the Vite dev server on port 3000.
 
 Open http://localhost:3000
 
+### Live Lambda Pricing Validation
+
+The normal test suite does not call the AWS Pricing API. With valid AWS credentials, validate Lambda SKU matching against live pricing data by running:
+
+```sh
+cd backend
+go run ./cmd/pricingdebug lambda --live --regions us-east-1,us-west-2,eu-west-1 --architectures x86_64,arm64
+```
+
+GovCloud regions are skipped by this command unless `AWSCOGS_ENABLE_GOVCLOUD=true` is set.
+
 ### Build and run a binary
 
 When you're ready to build a binary, run `make build`

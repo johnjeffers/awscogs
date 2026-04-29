@@ -43,6 +43,20 @@ type AWSProvider struct {
 	minCallInterval time.Duration      // Minimum time between API calls
 }
 
+// LambdaPriceDetails exposes the matched Pricing API products for live validation.
+type LambdaPriceDetails struct {
+	Region              string
+	Location            string
+	Architecture        string
+	RequestPrice        cogtypes.CostValue
+	GBSecondPrice       cogtypes.CostValue
+	RequestSKU          string
+	RequestUsageType    string
+	GBSecondSKU         string
+	GBSecondUsageType   string
+	MatchedProductCount int
+}
+
 // NewAWSProvider creates a new AWS pricing provider
 func NewAWSProvider(ctx context.Context, cacheDurationMinutes, rateLimitPerSecond int) (*AWSProvider, error) {
 	// AWS Pricing API is only available in us-east-1 and ap-south-1
@@ -409,6 +423,11 @@ func (p *AWSProvider) GetLambdaPrice(ctx context.Context, region, architecture s
 
 	prices := v.([2]cogtypes.CostValue)
 	return prices[0], prices[1], nil
+}
+
+// GetLambdaPriceDetails returns the matched Pricing API products for Lambda.
+func (p *AWSProvider) GetLambdaPriceDetails(ctx context.Context, region, architecture string) (LambdaPriceDetails, error) {
+	return p.fetchLambdaPriceDetails(ctx, region, architecture)
 }
 
 // RefreshCache forces a refresh of the pricing cache
@@ -958,58 +977,93 @@ func (p *AWSProvider) fetchPublicIPv4Price(ctx context.Context, region string) (
 
 // fetchLambdaPrice queries the Pricing API for Lambda request and duration rates.
 func (p *AWSProvider) fetchLambdaPrice(ctx context.Context, region, architecture string) (request, gbSecond cogtypes.CostValue, err error) {
+	details, err := p.fetchLambdaPriceDetails(ctx, region, architecture)
+	if err != nil {
+		return 0, 0, err
+	}
+	return details.RequestPrice, details.GBSecondPrice, nil
+}
+
+func (p *AWSProvider) fetchLambdaPriceDetails(ctx context.Context, region, architecture string) (LambdaPriceDetails, error) {
 	locationName, ok := regionToLocation[region]
 	if !ok {
-		return 0, 0, fmt.Errorf("unknown region: %s", region)
+		return LambdaPriceDetails{}, fmt.Errorf("unknown region: %s", region)
 	}
 
 	if err := p.waitForRateLimit(ctx); err != nil {
-		return 0, 0, fmt.Errorf("rate limit: %w", err)
-	}
-
-	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
-		ServiceCode: aws.String("AWSLambda"),
-		Filters: []types.Filter{
-			termFilter("location", locationName),
-		},
-		MaxResults: aws.Int32(100),
-	})
-	if err != nil {
-		return 0, 0, fmt.Errorf("GetProducts for Lambda: %w", err)
+		return LambdaPriceDetails{}, fmt.Errorf("rate limit: %w", err)
 	}
 
 	wantARM := normalizeLambdaArchitecture(architecture) == "arm64"
-	for _, pl := range output.PriceList {
-		usagetype := getProductAttribute(pl, "usagetype")
-		if shouldSkipLambdaUsageType(usagetype) {
-			continue
-		}
-
-		price, parseErr := parsePriceFromProduct(pl)
-		if parseErr != nil {
-			continue
-		}
-
-		if isLambdaRequestUsage(usagetype) {
-			request = price
-			continue
-		}
-
-		if wantARM && isLambdaArmGBSecondUsage(usagetype) {
-			gbSecond = price
-		} else if !wantARM && isLambdaX86GBSecondUsage(usagetype) {
-			gbSecond = price
-		}
+	details := LambdaPriceDetails{
+		Region:       region,
+		Location:     locationName,
+		Architecture: normalizeLambdaArchitecture(architecture),
 	}
 
-	if request == 0 {
-		return 0, 0, fmt.Errorf("no Lambda request pricing found in %s", region)
-	}
-	if gbSecond == 0 {
-		return 0, 0, fmt.Errorf("no Lambda GB-second pricing found in %s for %s", region, architecture)
+	var nextToken *string
+	for {
+		output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+			ServiceCode: aws.String("AWSLambda"),
+			Filters: []types.Filter{
+				termFilter("location", locationName),
+			},
+			MaxResults: aws.Int32(100),
+			NextToken:  nextToken,
+		})
+		if err != nil {
+			return LambdaPriceDetails{}, fmt.Errorf("GetProducts for Lambda: %w", err)
+		}
+
+		for _, pl := range output.PriceList {
+			usagetype := getProductAttribute(pl, "usagetype")
+			if shouldSkipLambdaUsageType(usagetype) {
+				continue
+			}
+
+			price, parseErr := parsePriceFromProduct(pl)
+			if parseErr != nil {
+				continue
+			}
+
+			if details.RequestPrice == 0 && isLambdaRequestUsage(usagetype) {
+				details.RequestPrice = price
+				details.RequestSKU = getProductSKU(pl)
+				details.RequestUsageType = usagetype
+				details.MatchedProductCount++
+				continue
+			}
+
+			if details.GBSecondPrice == 0 && wantARM && isLambdaArmGBSecondUsage(usagetype) {
+				details.GBSecondPrice = price
+				details.GBSecondSKU = getProductSKU(pl)
+				details.GBSecondUsageType = usagetype
+				details.MatchedProductCount++
+			} else if details.GBSecondPrice == 0 && !wantARM && isLambdaX86GBSecondUsage(usagetype) {
+				details.GBSecondPrice = price
+				details.GBSecondSKU = getProductSKU(pl)
+				details.GBSecondUsageType = usagetype
+				details.MatchedProductCount++
+			}
+		}
+
+		if details.RequestPrice != 0 && details.GBSecondPrice != 0 {
+			break
+		}
+		if output.NextToken == nil || aws.ToString(output.NextToken) == "" {
+			break
+		}
+		nextToken = output.NextToken
 	}
 
-	return request, gbSecond, nil
+	if details.RequestPrice == 0 {
+		return LambdaPriceDetails{}, fmt.Errorf("no Lambda request pricing found in %s", region)
+	}
+	if details.GBSecondPrice == 0 {
+		return LambdaPriceDetails{}, fmt.Errorf("no Lambda GB-second pricing found in %s for %s", region, architecture)
+	}
+
+	return details, nil
 }
 
 // ---- Helpers ----
@@ -1022,7 +1076,7 @@ func normalizeLambdaArchitecture(architecture string) string {
 }
 
 func shouldSkipLambdaUsageType(usagetype string) bool {
-	skip := []string{"Provisioned", "Ephemeral", "SnapStart", "Edge", "Url", "URL", "Response-Streaming"}
+	skip := []string{"Provisioned", "Ephemeral", "SnapStart", "Edge", "Url", "URL", "Response-Streaming", "Managed-Instances", "Tenant-Isolated", "Event-Poller"}
 	for _, marker := range skip {
 		if strings.Contains(usagetype, marker) {
 			return true
@@ -1032,11 +1086,19 @@ func shouldSkipLambdaUsageType(usagetype string) bool {
 }
 
 func isLambdaRequestUsage(usagetype string) bool {
-	return strings.HasSuffix(usagetype, "Lambda-Requests") || usagetype == "Lambda-Requests"
+	return usagetype == "Request" ||
+		usagetype == "Request-ARM" ||
+		strings.HasSuffix(usagetype, "-Request") ||
+		strings.HasSuffix(usagetype, "-Request-ARM") ||
+		strings.HasSuffix(usagetype, "Lambda-Requests") ||
+		usagetype == "Lambda-Requests"
 }
 
 func isLambdaArmGBSecondUsage(usagetype string) bool {
-	return strings.HasSuffix(usagetype, "Lambda-ARM-GB-Second") || usagetype == "Lambda-ARM-GB-Second"
+	return strings.HasSuffix(usagetype, "Lambda-GB-Second-ARM") ||
+		strings.HasSuffix(usagetype, "Lambda-ARM-GB-Second") ||
+		usagetype == "Lambda-GB-Second-ARM" ||
+		usagetype == "Lambda-ARM-GB-Second"
 }
 
 func isLambdaX86GBSecondUsage(usagetype string) bool {
@@ -1088,6 +1150,21 @@ func getProductAttribute(priceListJSON, attrName string) string {
 
 	val, _ := attrs[attrName].(string)
 	return val
+}
+
+func getProductSKU(priceListJSON string) string {
+	var product map[string]any
+	if err := json.Unmarshal([]byte(priceListJSON), &product); err != nil {
+		return ""
+	}
+
+	prod, ok := product["product"].(map[string]any)
+	if !ok {
+		return ""
+	}
+
+	sku, _ := prod["sku"].(string)
+	return sku
 }
 
 // parsePriceFromProduct extracts the hourly on-demand price from the AWS pricing JSON

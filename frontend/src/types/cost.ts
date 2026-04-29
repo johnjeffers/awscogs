@@ -1,5 +1,7 @@
 export interface CostResponse {
   timestamp: string;
+  status: 'ok' | 'partial' | 'failed';
+  diagnostics?: Diagnostic[];
   totalCost: number;
   currency: string;
   accounts?: AccountSummary[];
@@ -16,6 +18,17 @@ export interface CostResponse {
   publicIpv4s?: PublicIPv4[];
   lambdas?: LambdaFunction[];
   filters: AppliedFilters;
+}
+
+export interface Diagnostic {
+  level: 'warning' | 'error';
+  resourceType?: string;
+  accountId?: string;
+  accountName?: string;
+  region?: string;
+  operation?: string;
+  resourceId?: string;
+  message: string;
 }
 
 export interface AccountSummary {

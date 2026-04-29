@@ -9,6 +9,7 @@ interface CostState {
   configLoading: boolean;
   configError: string | null;
   loading: boolean;
+  clearingCache: boolean;
   error: string | null;
   filters: CostFilters;
   selectedAccounts: string[];
@@ -16,6 +17,7 @@ interface CostState {
   selectedResources: string[];
   hasLoadedData: boolean;
   dataVersion: number;
+  currentRequestId: string | null;
 }
 
 const initialState: CostState = {
@@ -24,6 +26,7 @@ const initialState: CostState = {
   configLoading: false,
   configError: null,
   loading: false,
+  clearingCache: false,
   error: null,
   filters: {},
   selectedAccounts: [],
@@ -31,16 +34,17 @@ const initialState: CostState = {
   selectedResources: [],
   hasLoadedData: false,
   dataVersion: 0,
+  currentRequestId: null,
 };
 
-export const fetchCosts = createAsyncThunk('costs/fetch', async (_, { getState }) => {
+export const fetchCosts = createAsyncThunk('costs/fetch', async (_, { getState, requestId, signal }) => {
   const state = getState() as { costs: CostState };
   const filters: CostFilters = {
     accounts: state.costs.selectedAccounts.length > 0 ? state.costs.selectedAccounts : undefined,
     regions: state.costs.selectedRegions.length > 0 ? state.costs.selectedRegions : undefined,
     resources: state.costs.selectedResources.length > 0 ? state.costs.selectedResources : undefined,
   };
-  return await costApi.getCosts(filters);
+  return await costApi.getCosts(filters, signal, requestId);
 });
 
 export const fetchELBUsage = createAsyncThunk('costs/fetchELBUsage', async (usageWindow: string, { getState }) => {
@@ -54,6 +58,10 @@ export const fetchELBUsage = createAsyncThunk('costs/fetchELBUsage', async (usag
 
 export const fetchConfig = createAsyncThunk('costs/fetchConfig', async () => {
   return await configApi.getConfig();
+});
+
+export const clearCache = createAsyncThunk('costs/clearCache', async () => {
+  return await costApi.clearCache();
 });
 
 const costSlice = createSlice({
@@ -84,27 +92,53 @@ const costSlice = createSlice({
         }
       }
     },
+    cancelCostLoad: (state) => {
+      state.loading = false;
+      state.currentRequestId = null;
+    },
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchCosts.pending, (state) => {
+      .addCase(fetchCosts.pending, (state, action) => {
         state.loading = true;
         state.error = null;
+        state.currentRequestId = action.meta.requestId;
       })
       .addCase(fetchCosts.fulfilled, (state, action) => {
+        if (state.currentRequestId !== action.meta.requestId) {
+          return;
+        }
         state.loading = false;
+        state.currentRequestId = null;
         state.data = action.payload;
         state.hasLoadedData = true;
         state.dataVersion += 1;
       })
       .addCase(fetchCosts.rejected, (state, action) => {
+        if (state.currentRequestId !== action.meta.requestId) {
+          return;
+        }
         state.loading = false;
-        state.error = action.error.message || 'Failed to fetch costs';
+        state.currentRequestId = null;
+        if (!action.meta.aborted) {
+          state.error = action.error.message || 'Failed to fetch costs';
+        }
       })
       .addCase(fetchELBUsage.fulfilled, (state, action) => {
         if (state.data) {
           state.data.loadBalancers = action.payload.loadBalancers;
         }
+      })
+      .addCase(clearCache.pending, (state) => {
+        state.clearingCache = true;
+        state.error = null;
+      })
+      .addCase(clearCache.fulfilled, (state) => {
+        state.clearingCache = false;
+      })
+      .addCase(clearCache.rejected, (state, action) => {
+        state.clearingCache = false;
+        state.error = action.error.message || 'Failed to clear cache';
       })
       .addCase(fetchConfig.pending, (state) => {
         state.configLoading = true;
@@ -121,5 +155,6 @@ const costSlice = createSlice({
   },
 });
 
-export const { setSelectedAccounts, setSelectedRegions, setSelectedResources, clearELBUsage } = costSlice.actions;
+export const { setSelectedAccounts, setSelectedRegions, setSelectedResources, clearELBUsage, cancelCostLoad } =
+  costSlice.actions;
 export default costSlice.reducer;

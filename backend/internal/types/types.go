@@ -80,6 +80,25 @@ const (
 	UsageStatusUnavailable = "unavailable"
 )
 
+// Response status constants describe the health of a cost query.
+const (
+	ResponseStatusOK      = "ok"
+	ResponseStatusPartial = "partial"
+	ResponseStatusFailed  = "failed"
+)
+
+// Diagnostic describes a partial failure that may affect reported costs.
+type Diagnostic struct {
+	Level        string `json:"level"`
+	ResourceType string `json:"resourceType,omitempty"`
+	AccountID    string `json:"accountId,omitempty"`
+	AccountName  string `json:"accountName,omitempty"`
+	Region       string `json:"region,omitempty"`
+	Operation    string `json:"operation,omitempty"`
+	ResourceID   string `json:"resourceId,omitempty"`
+	Message      string `json:"message"`
+}
+
 // LoadBalancer represents an Elastic Load Balancer with its cost
 type LoadBalancer struct {
 	AccountID           string    `json:"accountId"`
@@ -220,6 +239,8 @@ type RegionSummary struct {
 // CostResponse is the API response for cost data
 type CostResponse struct {
 	Timestamp     string           `json:"timestamp"`
+	Status        string           `json:"status"`
+	Diagnostics   []Diagnostic     `json:"diagnostics,omitempty"`
 	TotalCost     CostValue        `json:"totalCost"`
 	Currency      string           `json:"currency"`
 	Accounts      []AccountSummary `json:"accounts,omitempty"`

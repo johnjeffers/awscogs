@@ -701,6 +701,24 @@ export const CostDashboard: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const diagnostics = data?.diagnostics || [];
+  const errorDiagnostics = diagnostics.filter((diagnostic) => diagnostic.level === 'error').length;
+  const warningDiagnostics = diagnostics.length - errorDiagnostics;
+  const diagnosticsTone =
+    errorDiagnostics > 0
+      ? {
+          container: 'bg-red-50 border-red-200',
+          heading: 'text-red-800',
+          body: 'text-red-700',
+          badge: 'bg-red-100 text-red-700',
+        }
+      : {
+          container: 'bg-amber-50 border-amber-200',
+          heading: 'text-amber-800',
+          body: 'text-amber-700',
+          badge: 'bg-amber-100 text-amber-700',
+        };
+
   return (
     <div>
       {/* Resource Selector */}
@@ -737,6 +755,51 @@ export const CostDashboard: React.FC = () => {
       {/* Cost Data */}
       {data && (
         <>
+          {diagnostics.length > 0 && (
+            <div className={`border rounded-md p-4 mb-6 ${diagnosticsTone.container}`}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className={`text-sm font-medium ${diagnosticsTone.heading}`}>Partial cost data</h3>
+                  <p className={`mt-1 text-sm ${diagnosticsTone.body}`}>
+                    Some resources could not be discovered or priced, so totals may be undercounted.
+                  </p>
+                </div>
+                <div className="flex gap-2 text-xs font-medium whitespace-nowrap">
+                  {errorDiagnostics > 0 && (
+                    <span className={`px-2 py-1 rounded-full ${diagnosticsTone.badge}`}>{errorDiagnostics} errors</span>
+                  )}
+                  {warningDiagnostics > 0 && (
+                    <span className={`px-2 py-1 rounded-full ${diagnosticsTone.badge}`}>
+                      {warningDiagnostics} warnings
+                    </span>
+                  )}
+                </div>
+              </div>
+              <details className={`mt-3 text-sm ${diagnosticsTone.body}`}>
+                <summary className="cursor-pointer font-medium">Diagnostics</summary>
+                <ul className="mt-2 space-y-2">
+                  {diagnostics.slice(0, 25).map((diagnostic, index) => {
+                    const scope = [
+                      diagnostic.resourceType,
+                      diagnostic.accountName || diagnostic.accountId,
+                      diagnostic.region,
+                      diagnostic.resourceId,
+                    ]
+                      .filter(Boolean)
+                      .join(' / ');
+                    return (
+                      <li key={`${diagnostic.operation || 'diagnostic'}-${index}`}>
+                        <span className="font-medium">{diagnostic.operation || diagnostic.level}</span>
+                        {scope && <span> ({scope})</span>}: {diagnostic.message}
+                      </li>
+                    );
+                  })}
+                </ul>
+                {diagnostics.length > 25 && <p className="mt-2">Showing 25 of {diagnostics.length} diagnostics.</p>}
+              </details>
+            </div>
+          )}
+
           <CostSummary
             selectedCost={selectedData.cost}
             totalCost={totals.cost}

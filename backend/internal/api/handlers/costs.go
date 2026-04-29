@@ -29,14 +29,44 @@ func NewCostsHandler(cfg *config.Config, discovery *aws.Discovery, logger *slog.
 	}
 }
 
+func copyResponseHealth(dst, src *types.CostResponse) {
+	dst.Status = src.Status
+	if dst.Status == "" {
+		dst.Status = types.ResponseStatusOK
+	}
+	dst.Diagnostics = src.Diagnostics
+}
+
+// ClearCache clears cached discovery and pricing data.
+func (h *CostsHandler) ClearCache(w http.ResponseWriter, r *http.Request) {
+	if err := h.discovery.ClearCaches(r.Context()); err != nil {
+		h.logger.Error("failed to clear caches", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
+}
+
 // GetCosts returns all cost data
 func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	started := time.Now()
 
 	// Parse filters from query params
 	accountFilter := parseArrayParam(r, "account")
 	regionFilter := parseArrayParam(r, "region")
 	resourceFilter := parseArrayParam(r, "resource")
+	requestID := r.URL.Query().Get("_rid")
+
+	h.logger.Info("cost request started",
+		"requestId", requestID,
+		"accounts", accountFilter,
+		"regions", regionFilter,
+		"resources", resourceFilter)
 
 	// Get regions (discover or use config)
 	regions, err := h.getRegions(ctx, regionFilter)
@@ -68,6 +98,15 @@ func (h *CostsHandler) GetCosts(w http.ResponseWriter, r *http.Request) {
 		Regions:       regionFilter,
 		ResourceTypes: resourceFilter,
 	}
+	if response.Status == "" {
+		response.Status = types.ResponseStatusOK
+	}
+
+	h.logger.Info("cost request completed",
+		"requestId", requestID,
+		"status", response.Status,
+		"diagnostics", len(response.Diagnostics),
+		"duration", time.Since(started).String())
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(response); err != nil {
@@ -115,6 +154,8 @@ func (h *CostsHandler) GetAccountCosts(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -160,6 +201,8 @@ func (h *CostsHandler) GetRegionCosts(w http.ResponseWriter, r *http.Request) {
 			Regions:  regionFilter,
 		},
 	}
+
+	copyResponseHealth(result, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
@@ -213,6 +256,8 @@ func (h *CostsHandler) GetEC2Costs(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -264,6 +309,8 @@ func (h *CostsHandler) GetEBSCosts(w http.ResponseWriter, r *http.Request) {
 			ResourceTypes: []string{"ebs"},
 		},
 	}
+
+	copyResponseHealth(result, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
@@ -317,6 +364,8 @@ func (h *CostsHandler) GetRDSCosts(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -369,6 +418,8 @@ func (h *CostsHandler) GetECSCosts(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -420,6 +471,8 @@ func (h *CostsHandler) GetEKSCosts(w http.ResponseWriter, r *http.Request) {
 			ResourceTypes: []string{"eks"},
 		},
 	}
+
+	copyResponseHealth(result, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
@@ -489,6 +542,8 @@ func (h *CostsHandler) GetELBCosts(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -540,6 +595,8 @@ func (h *CostsHandler) GetNATGatewayCosts(w http.ResponseWriter, r *http.Request
 			ResourceTypes: []string{"nat"},
 		},
 	}
+
+	copyResponseHealth(result, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
@@ -593,6 +650,8 @@ func (h *CostsHandler) GetElasticIPCosts(w http.ResponseWriter, r *http.Request)
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -644,6 +703,8 @@ func (h *CostsHandler) GetSecretsCosts(w http.ResponseWriter, r *http.Request) {
 			ResourceTypes: []string{"secrets"},
 		},
 	}
+
+	copyResponseHealth(result, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
@@ -697,6 +758,8 @@ func (h *CostsHandler) GetPublicIPv4Costs(w http.ResponseWriter, r *http.Request
 		},
 	}
 
+	copyResponseHealth(result, response)
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {
 		h.logger.Error("failed to encode response", "error", err)
@@ -747,6 +810,8 @@ func (h *CostsHandler) GetLambdaCosts(w http.ResponseWriter, r *http.Request) {
 			ResourceTypes: []string{"lambda"},
 		},
 	}
+
+	copyResponseHealth(result, response)
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(result); err != nil {

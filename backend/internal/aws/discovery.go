@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -89,6 +90,64 @@ type elbUsageData struct {
 	Error               string
 }
 
+type diagnosticsContextKey struct{}
+type discoveryRunContextKey struct{}
+
+var discoveryRunCounter atomic.Uint64
+
+type diagnosticCollector struct {
+	mu          sync.Mutex
+	diagnostics []types.Diagnostic
+}
+
+func newDiagnosticCollector() *diagnosticCollector {
+	return &diagnosticCollector{}
+}
+
+func contextWithDiagnostics(ctx context.Context, collector *diagnosticCollector) context.Context {
+	return context.WithValue(ctx, diagnosticsContextKey{}, collector)
+}
+
+func contextWithDiscoveryRun(ctx context.Context) context.Context {
+	return context.WithValue(ctx, discoveryRunContextKey{}, discoveryRunCounter.Add(1))
+}
+
+func recordDiagnostic(ctx context.Context, diagnostic types.Diagnostic) {
+	collector, ok := ctx.Value(diagnosticsContextKey{}).(*diagnosticCollector)
+	if !ok || collector == nil {
+		return
+	}
+	collector.mu.Lock()
+	collector.diagnostics = append(collector.diagnostics, diagnostic)
+	collector.mu.Unlock()
+}
+
+func (c *diagnosticCollector) snapshot() []types.Diagnostic {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	diagnostics := make([]types.Diagnostic, len(c.diagnostics))
+	copy(diagnostics, c.diagnostics)
+	return diagnostics
+}
+
+func newDiagnostic(level, resourceType, accountID, accountName, region, operation, resourceID string, err error) types.Diagnostic {
+	message := ""
+	if err != nil {
+		message = err.Error()
+	}
+	return types.Diagnostic{
+		Level:        level,
+		ResourceType: resourceType,
+		AccountID:    accountID,
+		AccountName:  accountName,
+		Region:       region,
+		Operation:    operation,
+		ResourceID:   resourceID,
+		Message:      message,
+	}
+}
+
 // NewDiscovery creates a new AWS resource discovery service
 func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger, resourceTTLMinutes, accountTTLMinutes int) *Discovery {
 	return &Discovery{
@@ -100,6 +159,40 @@ func NewDiscovery(pricingProvider pricing.Provider, logger *slog.Logger, resourc
 		usageCache:      make(map[string]cacheEntry[map[string]elbUsageData]),
 		cwSemaphore:     make(chan struct{}, 10),
 	}
+}
+
+// ClearCaches clears cached discovery, usage, account, region, and pricing data.
+func (d *Discovery) ClearCaches(ctx context.Context) error {
+	d.resourceCacheMu.Lock()
+	d.resourceCache = make(map[string]cacheEntry[any])
+	d.resourceCacheMu.Unlock()
+
+	d.usageCacheMu.Lock()
+	d.usageCache = make(map[string]cacheEntry[map[string]elbUsageData])
+	d.usageCacheMu.Unlock()
+
+	d.accountCacheMu.Lock()
+	d.accountCache = nil
+	d.accountCacheMu.Unlock()
+
+	d.govCloudAccountCacheMu.Lock()
+	d.govCloudAccountCache = nil
+	d.govCloudAccountCacheMu.Unlock()
+
+	d.regionCacheMu.Lock()
+	d.regionCache = nil
+	d.regionCacheMu.Unlock()
+
+	d.govCloudRegionCacheMu.Lock()
+	d.govCloudRegionCache = nil
+	d.govCloudRegionCacheMu.Unlock()
+
+	if err := d.pricingProvider.RefreshCache(ctx); err != nil {
+		return fmt.Errorf("refreshing pricing cache: %w", err)
+	}
+
+	d.logger.Info("cleared discovery and pricing caches")
+	return nil
 }
 
 // Account represents an AWS account configuration
@@ -204,6 +297,10 @@ func shouldDiscover(resourceTypes []string, resourceType string) bool {
 // DiscoverResources discovers all resources across the specified accounts and regions
 // resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets, publicipv4, lambda)
 func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string, resourceTypes []string) (*types.CostResponse, error) {
+	diagnostics := newDiagnosticCollector()
+	ctx = contextWithDiagnostics(ctx, diagnostics)
+	ctx = contextWithDiscoveryRun(ctx)
+
 	var (
 		allEC2        []types.EC2Instance
 		allEBS        []types.EBSVolume
@@ -243,6 +340,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 						"account", acc.Name,
 						"region", reg,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("error", "account", acc.ID, acc.Name, reg, "getConfig", "", err))
 					return
 				}
 
@@ -252,6 +350,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 					accountID, err = d.getAccountID(ctx, cfg)
 					if err != nil {
 						d.logger.Warn("failed to get account ID", "error", err)
+						recordDiagnostic(ctx, newDiagnostic("warning", "account", accountID, acc.Name, reg, "getAccountID", "", err))
 						accountID = "unknown"
 					}
 				}
@@ -389,8 +488,16 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4, allLambdas)
 	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4, allLambdas)
 
+	responseStatus := types.ResponseStatusOK
+	responseDiagnostics := diagnostics.snapshot()
+	if len(responseDiagnostics) > 0 {
+		responseStatus = types.ResponseStatusPartial
+	}
+
 	result := &types.CostResponse{
 		TotalCost:     totalCost,
+		Status:        responseStatus,
+		Diagnostics:   responseDiagnostics,
 		Currency:      "USD",
 		Accounts:      accountSummaries,
 		Regions:       regionSummaries,
@@ -683,6 +790,7 @@ func (d *Discovery) discoverEC2(ctx context.Context, cfg aws.Config, accountID, 
 							"instanceType", instanceType,
 							"region", region,
 							"error", err)
+						recordDiagnostic(ctx, newDiagnostic("warning", "ec2", accountID, accountName, region, "pricing", aws.ToString(inst.InstanceId), err))
 					} else {
 						hourlyCost = price
 					}
@@ -745,6 +853,7 @@ func (d *Discovery) discoverEBS(ctx context.Context, cfg aws.Config, accountID, 
 					"volumeType", volumeType,
 					"region", region,
 					"error", err)
+				recordDiagnostic(ctx, newDiagnostic("warning", "ebs", accountID, accountName, region, "pricing", aws.ToString(vol.VolumeId), err))
 			}
 
 			volumes = append(volumes, types.EBSVolume{
@@ -827,6 +936,7 @@ func (d *Discovery) discoverRDS(ctx context.Context, cfg aws.Config, accountID, 
 						"engine", engine,
 						"region", region,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "rds", accountID, accountName, region, "pricing", aws.ToString(inst.DBInstanceIdentifier), err))
 				} else {
 					hourlyCost = price
 				}
@@ -885,6 +995,7 @@ func (d *Discovery) discoverECS(ctx context.Context, cfg aws.Config, accountID, 
 					d.logger.Warn("failed to list services in cluster",
 						"cluster", clusterName,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "ecs", accountID, accountName, region, "listServices", clusterName, err))
 					break
 				}
 
@@ -901,6 +1012,7 @@ func (d *Discovery) discoverECS(ctx context.Context, cfg aws.Config, accountID, 
 					d.logger.Warn("failed to describe services",
 						"cluster", clusterName,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "ecs", accountID, accountName, region, "describeServices", clusterName, err))
 					continue
 				}
 
@@ -939,6 +1051,7 @@ func (d *Discovery) discoverECS(ctx context.Context, cfg aws.Config, accountID, 
 								"service", serviceName,
 								"region", region,
 								"error", err)
+							recordDiagnostic(ctx, newDiagnostic("warning", "ecs", accountID, accountName, region, "pricing", clusterName+"/"+serviceName, err))
 						} else {
 							hourlyCost = price
 						}
@@ -989,6 +1102,7 @@ func (d *Discovery) discoverEKS(ctx context.Context, cfg aws.Config, accountID, 
 				d.logger.Warn("failed to describe EKS cluster",
 					"cluster", clusterName,
 					"error", err)
+				recordDiagnostic(ctx, newDiagnostic("warning", "eks", accountID, accountName, region, "describeCluster", clusterName, err))
 				continue
 			}
 
@@ -1021,6 +1135,7 @@ func (d *Discovery) discoverEKS(ctx context.Context, cfg aws.Config, accountID, 
 						"cluster", clusterName,
 						"region", region,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "eks", accountID, accountName, region, "pricing", clusterName, err))
 				} else {
 					hourlyCost = price
 				}
@@ -1056,6 +1171,7 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 			d.logger.Warn("failed to describe v2 load balancers",
 				"region", region,
 				"error", err)
+			recordDiagnostic(ctx, newDiagnostic("warning", "elb", accountID, accountName, region, "describeLoadBalancersV2", "", err))
 			break
 		}
 
@@ -1096,6 +1212,7 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 						"type", lbType,
 						"region", region,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "elb", accountID, accountName, region, "pricing", name, err))
 				} else {
 					baseHourlyCost = base
 
@@ -1135,6 +1252,7 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 		d.logger.Warn("failed to describe classic load balancers",
 			"region", region,
 			"error", err)
+		recordDiagnostic(ctx, newDiagnostic("warning", "elb", accountID, accountName, region, "describeClassicLoadBalancers", "", err))
 	} else {
 		for _, lb := range v1Output.LoadBalancerDescriptions {
 			name := ""
@@ -1155,6 +1273,7 @@ func (d *Discovery) discoverELB(ctx context.Context, cfg aws.Config, accountID, 
 					"name", name,
 					"region", region,
 					"error", err)
+				recordDiagnostic(ctx, newDiagnostic("warning", "elb", accountID, accountName, region, "pricing", name, err))
 			} else {
 				baseHourlyCost = base
 			}
@@ -1228,6 +1347,7 @@ func (d *Discovery) discoverNATGateways(ctx context.Context, cfg aws.Config, acc
 						"id", id,
 						"region", region,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "nat", accountID, accountName, region, "pricing", id, err))
 				} else {
 					hourlyCost = price
 				}
@@ -1295,6 +1415,7 @@ func (d *Discovery) discoverElasticIPs(ctx context.Context, cfg aws.Config, acco
 				"allocationId", allocationID,
 				"region", region,
 				"error", err)
+			recordDiagnostic(ctx, newDiagnostic("warning", "eip", accountID, accountName, region, "pricing", allocationID, err))
 		} else {
 			hourlyCost = price
 		}
@@ -1353,6 +1474,7 @@ func (d *Discovery) discoverSecrets(ctx context.Context, cfg aws.Config, account
 					"name", name,
 					"region", region,
 					"error", err)
+				recordDiagnostic(ctx, newDiagnostic("warning", "secrets", accountID, accountName, region, "pricing", arn, err))
 			} else {
 				hourlyCost = price
 			}
@@ -1431,6 +1553,7 @@ func (d *Discovery) discoverPublicIPv4s(ctx context.Context, cfg aws.Config, acc
 						"publicIp", publicIP,
 						"region", region,
 						"error", err)
+					recordDiagnostic(ctx, newDiagnostic("warning", "publicipv4", accountID, accountName, region, "pricing", publicIP, err))
 				} else {
 					hourlyCost = price
 				}
@@ -1474,14 +1597,15 @@ func (d *Discovery) discoverLambdas(ctx context.Context, cfg aws.Config, account
 
 			invocations, avgDurationMS, usageStatus, usageErr := d.fetchLambdaUsage(ctx, cwClient, functionName, usageStart, usageEnd)
 
-			requestPrice, gbSecondPrice, err := d.pricingProvider.GetLambdaPrice(ctx, region, architecture)
 			var requestCost, computeCost, hourlyCost types.CostValue
+			requestPrice, gbSecondPrice, err := d.pricingProvider.GetLambdaPrice(ctx, region, architecture)
 			if err != nil {
 				d.logger.Warn("failed to get Lambda price",
 					"function", functionName,
 					"region", region,
 					"architecture", architecture,
 					"error", err)
+				recordDiagnostic(ctx, newDiagnostic("warning", "lambda", accountID, accountName, region, "pricing", functionName, err))
 			} else {
 				memoryGB := float64(aws.ToInt32(fn.MemorySize)) / 1024.0
 				durationSeconds := avgDurationMS / 1000.0
@@ -1672,6 +1796,10 @@ func isRDSNonBillableState(state string) bool {
 // concurrent duplicate resource discovery for the same cache key.
 func getOrDiscoverResource[T any](d *Discovery, ctx context.Context, cfg aws.Config, accountID, accountName, region, resourceType string, discover func(context.Context, aws.Config, string, string, string) (T, error)) T {
 	cacheKey := resourceCacheKey(accountID, region, resourceType)
+	singleflightKey := cacheKey
+	if runID, ok := ctx.Value(discoveryRunContextKey{}).(uint64); ok {
+		singleflightKey = fmt.Sprintf("%s|run:%d", cacheKey, runID)
+	}
 
 	// Fast path: check cache with read lock
 	d.resourceCacheMu.RLock()
@@ -1683,7 +1811,7 @@ func getOrDiscoverResource[T any](d *Discovery, ctx context.Context, cfg aws.Con
 	d.resourceCacheMu.RUnlock()
 
 	// Use singleflight to coalesce concurrent requests for the same key
-	v, err, _ := d.sfGroup.Do(cacheKey, func() (any, error) {
+	v, err, _ := d.sfGroup.Do(singleflightKey, func() (any, error) {
 		// Double-check cache after acquiring singleflight
 		d.resourceCacheMu.RLock()
 		if entry, ok := d.resourceCache[cacheKey]; ok && time.Now().Before(entry.expiresAt) {
@@ -1706,6 +1834,7 @@ func getOrDiscoverResource[T any](d *Discovery, ctx context.Context, cfg aws.Con
 	})
 	if err != nil {
 		d.logger.Error("failed to discover resources", "type", resourceType, "account", accountName, "region", region, "error", err)
+		recordDiagnostic(ctx, newDiagnostic("error", resourceType, accountID, accountName, region, "discover", "", err))
 		var zero T
 		return zero
 	}
