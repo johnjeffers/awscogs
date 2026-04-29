@@ -20,6 +20,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancing"
 	"github.com/aws/aws-sdk-go-v2/service/elasticloadbalancingv2"
 	"github.com/aws/aws-sdk-go-v2/service/iam"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
 	"github.com/aws/aws-sdk-go-v2/service/organizations"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/secretsmanager"
@@ -200,7 +202,7 @@ func shouldDiscover(resourceTypes []string, resourceType string) bool {
 }
 
 // DiscoverResources discovers all resources across the specified accounts and regions
-// resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets, publicipv4)
+// resourceTypes filter: empty means all, otherwise only discover specified types (ec2, ebs, ecs, rds, eks, elb, nat, eip, secrets, publicipv4, lambda)
 func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, regions []string, resourceTypes []string) (*types.CostResponse, error) {
 	var (
 		allEC2        []types.EC2Instance
@@ -213,6 +215,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		allEIP        []types.ElasticIP
 		allSecrets    []types.Secret
 		allPublicIPv4 []types.PublicIPv4
+		allLambdas    []types.LambdaFunction
 		mu            sync.Mutex
 		wg            sync.WaitGroup
 		totalCost     types.CostValue
@@ -323,6 +326,11 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 					publicIPv4s = d.getOrDiscoverPublicIPv4s(ctx, cfg, accountID, accountName, reg)
 				}
 
+				var lambdas []types.LambdaFunction
+				if shouldDiscover(resourceTypes, "lambda") {
+					lambdas = d.getOrDiscoverLambdas(ctx, cfg, accountID, accountName, reg)
+				}
+
 				mu.Lock()
 				allEC2 = append(allEC2, ec2Instances...)
 				allEBS = append(allEBS, ebsVolumes...)
@@ -334,6 +342,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 				allEIP = append(allEIP, elasticIPs...)
 				allSecrets = append(allSecrets, secrets...)
 				allPublicIPv4 = append(allPublicIPv4, publicIPv4s...)
+				allLambdas = append(allLambdas, lambdas...)
 				mu.Unlock()
 			}(account, region)
 		}
@@ -372,10 +381,13 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 	for _, pip := range allPublicIPv4 {
 		totalCost += pip.HourlyCost
 	}
+	for _, fn := range allLambdas {
+		totalCost += fn.HourlyCost
+	}
 
 	// Build account and region summaries
-	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4)
-	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4)
+	accountSummaries := d.buildAccountSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4, allLambdas)
+	regionSummaries := d.buildRegionSummaries(allEC2, allEBS, allECS, allRDS, allEKS, allELB, allNAT, allEIP, allSecrets, allPublicIPv4, allLambdas)
 
 	result := &types.CostResponse{
 		TotalCost:     totalCost,
@@ -392,6 +404,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 		ElasticIPs:    allEIP,
 		Secrets:       allSecrets,
 		PublicIPv4s:   allPublicIPv4,
+		Lambdas:       allLambdas,
 	}
 
 	return result, nil
@@ -1438,6 +1451,172 @@ func (d *Discovery) discoverPublicIPv4s(ctx context.Context, cfg aws.Config, acc
 	return publicIPs, nil
 }
 
+// discoverLambdas discovers Lambda functions and computes cost from the last hour of usage.
+func (d *Discovery) discoverLambdas(ctx context.Context, cfg aws.Config, accountID, accountName, region string) ([]types.LambdaFunction, error) {
+	client := lambda.NewFromConfig(cfg)
+	cwClient := cloudwatch.NewFromConfig(cfg)
+
+	var functions []types.LambdaFunction
+	paginator := lambda.NewListFunctionsPaginator(client, &lambda.ListFunctionsInput{})
+
+	usageEnd := time.Now().UTC()
+	usageStart := usageEnd.Add(-1 * time.Hour)
+
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("listing Lambda functions: %w", err)
+		}
+
+		for _, fn := range page.Functions {
+			functionName := aws.ToString(fn.FunctionName)
+			architecture := firstLambdaArchitecture(fn.Architectures)
+
+			invocations, avgDurationMS, usageStatus, usageErr := d.fetchLambdaUsage(ctx, cwClient, functionName, usageStart, usageEnd)
+
+			requestPrice, gbSecondPrice, err := d.pricingProvider.GetLambdaPrice(ctx, region, architecture)
+			var requestCost, computeCost, hourlyCost types.CostValue
+			if err != nil {
+				d.logger.Warn("failed to get Lambda price",
+					"function", functionName,
+					"region", region,
+					"architecture", architecture,
+					"error", err)
+			} else {
+				memoryGB := float64(aws.ToInt32(fn.MemorySize)) / 1024.0
+				durationSeconds := avgDurationMS / 1000.0
+				requestCost = types.CostValue(invocations) * requestPrice
+				computeCost = types.CostValue(invocations*durationSeconds*memoryGB) * gbSecondPrice
+				hourlyCost = requestCost + computeCost
+			}
+
+			ephemeralStorage := int32(512)
+			if fn.EphemeralStorage != nil && fn.EphemeralStorage.Size != nil {
+				ephemeralStorage = *fn.EphemeralStorage.Size
+			}
+
+			functions = append(functions, types.LambdaFunction{
+				AccountID:         accountID,
+				AccountName:       accountName,
+				Region:            region,
+				FunctionName:      functionName,
+				FunctionARN:       aws.ToString(fn.FunctionArn),
+				Runtime:           string(fn.Runtime),
+				Architectures:     lambdaArchitectures(fn.Architectures),
+				MemorySize:        aws.ToInt32(fn.MemorySize),
+				EphemeralStorage:  ephemeralStorage,
+				PackageType:       string(fn.PackageType),
+				LastModified:      aws.ToString(fn.LastModified),
+				State:             string(fn.State),
+				HourlyCost:        hourlyCost,
+				RequestHourlyCost: requestCost,
+				ComputeHourlyCost: computeCost,
+				Invocations:       invocations,
+				AverageDurationMS: avgDurationMS,
+				UsageWindow:       "1h",
+				UsageStart:        usageStart.Format(time.RFC3339),
+				UsageEnd:          usageEnd.Format(time.RFC3339),
+				UsageStatus:       usageStatus,
+				UsageError:        usageErr,
+			})
+		}
+	}
+
+	return functions, nil
+}
+
+func (d *Discovery) fetchLambdaUsage(ctx context.Context, client *cloudwatch.Client, functionName string, start, end time.Time) (invocations, avgDurationMS float64, status, usageErr string) {
+	input := &cloudwatch.GetMetricDataInput{
+		StartTime: aws.Time(start),
+		EndTime:   aws.Time(end),
+		MetricDataQueries: []cwtypes.MetricDataQuery{
+			{
+				Id: aws.String("invocations"),
+				MetricStat: &cwtypes.MetricStat{
+					Metric: &cwtypes.Metric{
+						Namespace:  aws.String("AWS/Lambda"),
+						MetricName: aws.String("Invocations"),
+						Dimensions: []cwtypes.Dimension{
+							{Name: aws.String("FunctionName"), Value: aws.String(functionName)},
+						},
+					},
+					Period: aws.Int32(3600),
+					Stat:   aws.String("Sum"),
+				},
+			},
+			{
+				Id: aws.String("duration"),
+				MetricStat: &cwtypes.MetricStat{
+					Metric: &cwtypes.Metric{
+						Namespace:  aws.String("AWS/Lambda"),
+						MetricName: aws.String("Duration"),
+						Dimensions: []cwtypes.Dimension{
+							{Name: aws.String("FunctionName"), Value: aws.String(functionName)},
+						},
+					},
+					Period: aws.Int32(3600),
+					Stat:   aws.String("Average"),
+				},
+			},
+		},
+	}
+
+	output, err := client.GetMetricData(ctx, input)
+	if err != nil {
+		d.logger.Debug("failed to fetch Lambda usage", "function", functionName, "error", err)
+		return 0, 0, types.UsageStatusUnavailable, err.Error()
+	}
+
+	var durationSum float64
+	var durationCount int
+	hasData := false
+
+	for _, result := range output.MetricDataResults {
+		if result.Id == nil {
+			continue
+		}
+		if result.StatusCode == cwtypes.StatusCodeInternalError {
+			continue
+		}
+		for _, value := range result.Values {
+			hasData = true
+			switch *result.Id {
+			case "invocations":
+				invocations += value
+			case "duration":
+				durationSum += value
+				durationCount++
+			}
+		}
+	}
+
+	if durationCount > 0 {
+		avgDurationMS = durationSum / float64(durationCount)
+	}
+	if !hasData {
+		return 0, 0, types.UsageStatusPartial, "no datapoints in window"
+	}
+	return invocations, avgDurationMS, types.UsageStatusOK, ""
+}
+
+func firstLambdaArchitecture(architectures []lambdatypes.Architecture) string {
+	if len(architectures) == 0 {
+		return "x86_64"
+	}
+	return string(architectures[0])
+}
+
+func lambdaArchitectures(architectures []lambdatypes.Architecture) []string {
+	if len(architectures) == 0 {
+		return []string{"x86_64"}
+	}
+	result := make([]string, 0, len(architectures))
+	for _, architecture := range architectures {
+		result = append(result, string(architecture))
+	}
+	return result
+}
+
 // getEC2Name extracts the Name tag from EC2 instance tags
 func getEC2Name(tags []ec2types.Tag) string {
 	for _, tag := range tags {
@@ -1584,8 +1763,13 @@ func (d *Discovery) getOrDiscoverPublicIPv4s(ctx context.Context, cfg aws.Config
 	return getOrDiscoverResource(d, ctx, cfg, accountID, accountName, region, "publicipv4", d.discoverPublicIPv4s)
 }
 
+// getOrDiscoverLambdas returns cached Lambda functions or discovers them
+func (d *Discovery) getOrDiscoverLambdas(ctx context.Context, cfg aws.Config, accountID, accountName, region string) []types.LambdaFunction {
+	return getOrDiscoverResource(d, ctx, cfg, accountID, accountName, region, "lambda", d.discoverLambdas)
+}
+
 // buildAccountSummaries builds account-level cost summaries
-func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret, publicIPv4 []types.PublicIPv4) []types.AccountSummary {
+func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret, publicIPv4 []types.PublicIPv4, lambdas []types.LambdaFunction) []types.AccountSummary {
 	summaries := make(map[string]*types.AccountSummary)
 
 	for _, inst := range ec2 {
@@ -1708,6 +1892,18 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 		summaries[key].TotalCost += pip.HourlyCost
 	}
 
+	for _, fn := range lambdas {
+		key := fn.AccountID
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.AccountSummary{
+				AccountID:   fn.AccountID,
+				AccountName: fn.AccountName,
+			}
+		}
+		summaries[key].LambdaCount++
+		summaries[key].TotalCost += fn.HourlyCost
+	}
+
 	result := make([]types.AccountSummary, 0, len(summaries))
 	for _, s := range summaries {
 		result = append(result, *s)
@@ -1716,7 +1912,7 @@ func (d *Discovery) buildAccountSummaries(ec2 []types.EC2Instance, ebs []types.E
 }
 
 // buildRegionSummaries builds region-level cost summaries
-func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret, publicIPv4 []types.PublicIPv4) []types.RegionSummary {
+func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EBSVolume, ecs []types.ECSService, rds []types.RDSInstance, eks []types.EKSCluster, elb []types.LoadBalancer, nat []types.NATGateway, eip []types.ElasticIP, secrets []types.Secret, publicIPv4 []types.PublicIPv4, lambdas []types.LambdaFunction) []types.RegionSummary {
 	summaries := make(map[string]*types.RegionSummary)
 
 	for _, inst := range ec2 {
@@ -1807,6 +2003,15 @@ func (d *Discovery) buildRegionSummaries(ec2 []types.EC2Instance, ebs []types.EB
 		}
 		summaries[key].PublicIPv4Count++
 		summaries[key].TotalCost += pip.HourlyCost
+	}
+
+	for _, fn := range lambdas {
+		key := fn.Region
+		if _, ok := summaries[key]; !ok {
+			summaries[key] = &types.RegionSummary{Region: key}
+		}
+		summaries[key].LambdaCount++
+		summaries[key].TotalCost += fn.HourlyCost
 	}
 
 	result := make([]types.RegionSummary, 0, len(summaries))

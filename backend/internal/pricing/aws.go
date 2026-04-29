@@ -32,6 +32,8 @@ type AWSProvider struct {
 	eipCache        map[string]cogtypes.CostValue // key: "region:associated"
 	secretCache     map[string]cogtypes.CostValue // key: "region"
 	publicIPv4Cache map[string]cogtypes.CostValue // key: "region"
+	lambdaReqCache  map[string]cogtypes.CostValue // key: "region:architecture"
+	lambdaGBCache   map[string]cogtypes.CostValue // key: "region:architecture"
 	cacheMu         sync.RWMutex
 	cacheExpiry     time.Time
 	cacheDuration   time.Duration
@@ -76,6 +78,8 @@ func NewAWSProvider(ctx context.Context, cacheDurationMinutes, rateLimitPerSecon
 		eipCache:        make(map[string]cogtypes.CostValue),
 		secretCache:     make(map[string]cogtypes.CostValue),
 		publicIPv4Cache: make(map[string]cogtypes.CostValue),
+		lambdaReqCache:  make(map[string]cogtypes.CostValue),
+		lambdaGBCache:   make(map[string]cogtypes.CostValue),
 		cacheDuration:   time.Duration(cacheDurationMinutes) * time.Minute,
 		minCallInterval: minInterval,
 	}, nil
@@ -369,6 +373,44 @@ func (p *AWSProvider) GetPublicIPv4Price(ctx context.Context, region string) (co
 	})
 }
 
+// GetLambdaPrice returns per-request and per-GB-second prices for Lambda.
+func (p *AWSProvider) GetLambdaPrice(ctx context.Context, region, architecture string) (request, gbSecond cogtypes.CostValue, err error) {
+	cacheKey := fmt.Sprintf("%s:%s", region, normalizeLambdaArchitecture(architecture))
+
+	v, err, _ := p.sfGroup.Do("lambda:"+cacheKey, func() (any, error) {
+		p.cacheMu.RLock()
+		req, hasReq := p.lambdaReqCache[cacheKey]
+		gb := p.lambdaGBCache[cacheKey]
+		valid := time.Now().Before(p.cacheExpiry)
+		p.cacheMu.RUnlock()
+
+		if hasReq && valid {
+			return [2]cogtypes.CostValue{req, gb}, nil
+		}
+
+		req, gb, err := p.fetchLambdaPrice(ctx, region, architecture)
+		if err != nil {
+			return [2]cogtypes.CostValue{}, err
+		}
+
+		p.cacheMu.Lock()
+		p.lambdaReqCache[cacheKey] = req
+		p.lambdaGBCache[cacheKey] = gb
+		if p.cacheExpiry.IsZero() || time.Now().After(p.cacheExpiry) {
+			p.cacheExpiry = time.Now().Add(p.cacheDuration)
+		}
+		p.cacheMu.Unlock()
+
+		return [2]cogtypes.CostValue{req, gb}, nil
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+
+	prices := v.([2]cogtypes.CostValue)
+	return prices[0], prices[1], nil
+}
+
 // RefreshCache forces a refresh of the pricing cache
 func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.cacheMu.Lock()
@@ -383,6 +425,8 @@ func (p *AWSProvider) RefreshCache(ctx context.Context) error {
 	p.eipCache = make(map[string]cogtypes.CostValue)
 	p.secretCache = make(map[string]cogtypes.CostValue)
 	p.publicIPv4Cache = make(map[string]cogtypes.CostValue)
+	p.lambdaReqCache = make(map[string]cogtypes.CostValue)
+	p.lambdaGBCache = make(map[string]cogtypes.CostValue)
 	p.cacheExpiry = time.Time{}
 	p.cacheMu.Unlock()
 	return nil
@@ -912,7 +956,95 @@ func (p *AWSProvider) fetchPublicIPv4Price(ctx context.Context, region string) (
 	return parsePriceFromProduct(output.PriceList[0])
 }
 
+// fetchLambdaPrice queries the Pricing API for Lambda request and duration rates.
+func (p *AWSProvider) fetchLambdaPrice(ctx context.Context, region, architecture string) (request, gbSecond cogtypes.CostValue, err error) {
+	locationName, ok := regionToLocation[region]
+	if !ok {
+		return 0, 0, fmt.Errorf("unknown region: %s", region)
+	}
+
+	if err := p.waitForRateLimit(ctx); err != nil {
+		return 0, 0, fmt.Errorf("rate limit: %w", err)
+	}
+
+	output, err := p.client.GetProducts(ctx, &pricing.GetProductsInput{
+		ServiceCode: aws.String("AWSLambda"),
+		Filters: []types.Filter{
+			termFilter("location", locationName),
+		},
+		MaxResults: aws.Int32(100),
+	})
+	if err != nil {
+		return 0, 0, fmt.Errorf("GetProducts for Lambda: %w", err)
+	}
+
+	wantARM := normalizeLambdaArchitecture(architecture) == "arm64"
+	for _, pl := range output.PriceList {
+		usagetype := getProductAttribute(pl, "usagetype")
+		if shouldSkipLambdaUsageType(usagetype) {
+			continue
+		}
+
+		price, parseErr := parsePriceFromProduct(pl)
+		if parseErr != nil {
+			continue
+		}
+
+		if isLambdaRequestUsage(usagetype) {
+			request = price
+			continue
+		}
+
+		if wantARM && isLambdaArmGBSecondUsage(usagetype) {
+			gbSecond = price
+		} else if !wantARM && isLambdaX86GBSecondUsage(usagetype) {
+			gbSecond = price
+		}
+	}
+
+	if request == 0 {
+		return 0, 0, fmt.Errorf("no Lambda request pricing found in %s", region)
+	}
+	if gbSecond == 0 {
+		return 0, 0, fmt.Errorf("no Lambda GB-second pricing found in %s for %s", region, architecture)
+	}
+
+	return request, gbSecond, nil
+}
+
 // ---- Helpers ----
+
+func normalizeLambdaArchitecture(architecture string) string {
+	if strings.EqualFold(architecture, "arm64") {
+		return "arm64"
+	}
+	return "x86_64"
+}
+
+func shouldSkipLambdaUsageType(usagetype string) bool {
+	skip := []string{"Provisioned", "Ephemeral", "SnapStart", "Edge", "Url", "URL", "Response-Streaming"}
+	for _, marker := range skip {
+		if strings.Contains(usagetype, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func isLambdaRequestUsage(usagetype string) bool {
+	return strings.HasSuffix(usagetype, "Lambda-Requests") || usagetype == "Lambda-Requests"
+}
+
+func isLambdaArmGBSecondUsage(usagetype string) bool {
+	return strings.HasSuffix(usagetype, "Lambda-ARM-GB-Second") || usagetype == "Lambda-ARM-GB-Second"
+}
+
+func isLambdaX86GBSecondUsage(usagetype string) bool {
+	if strings.Contains(usagetype, "ARM") {
+		return false
+	}
+	return strings.HasSuffix(usagetype, "Lambda-GB-Second") || usagetype == "Lambda-GB-Second"
+}
 
 // mapRDSEngine maps RDS engine names to pricing API database engine names
 func mapRDSEngine(engine string) string {

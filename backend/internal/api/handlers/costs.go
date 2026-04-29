@@ -703,6 +703,57 @@ func (h *CostsHandler) GetPublicIPv4Costs(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// GetLambdaCosts returns Lambda function costs
+func (h *CostsHandler) GetLambdaCosts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	accountFilter := parseArrayParam(r, "account")
+	regionFilter := parseArrayParam(r, "region")
+
+	regions, err := h.getRegions(ctx, regionFilter)
+	if err != nil {
+		h.logger.Error("failed to get regions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	accounts, err := h.getAccounts(ctx, accountFilter)
+	if err != nil {
+		h.logger.Error("failed to get accounts", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	response, err := h.discovery.DiscoverResources(ctx, accounts, regions, []string{"lambda"})
+	if err != nil {
+		h.logger.Error("failed to discover Lambda functions", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	var lambdaTotal types.CostValue
+	for _, fn := range response.Lambdas {
+		lambdaTotal += fn.HourlyCost
+	}
+
+	result := &types.CostResponse{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		TotalCost: lambdaTotal,
+		Currency:  "USD",
+		Lambdas:   response.Lambdas,
+		Filters: types.AppliedFilters{
+			Accounts:      accountFilter,
+			Regions:       regionFilter,
+			ResourceTypes: []string{"lambda"},
+		},
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(result); err != nil {
+		h.logger.Error("failed to encode response", "error", err)
+	}
+}
+
 // getRegions returns regions to query - either from filter, discovery, or config
 func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]string, error) {
 	// If filter specified, use that

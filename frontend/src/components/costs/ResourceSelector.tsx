@@ -97,6 +97,7 @@ export const ResourceSelector: React.FC = () => {
     eip: 'Elastic IPs',
     secrets: 'Secrets',
     publicipv4: 'Public IPv4 Addrs',
+    lambda: 'Lambda Functions',
   };
 
   const resourceOptions = RESOURCE_TYPES.map((resource) => ({

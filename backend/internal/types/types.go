@@ -90,10 +90,10 @@ type LoadBalancer struct {
 	Type                string    `json:"type"`   // application, network, classic
 	Scheme              string    `json:"scheme"` // internet-facing, internal
 	State               string    `json:"state"`
-	HourlyCost          CostValue `json:"hourlyCost"`          // Total: base + LCU
-	BaseHourlyCost      CostValue `json:"baseHourlyCost"`      // Fixed hourly charge
-	LCUHourlyCost       CostValue `json:"lcuHourlyCost"`       // LCU/NLCU-based hourly charge
-	ConsumedLCUs        float64   `json:"consumedLcus"`        // Average consumed LCUs per hour
+	HourlyCost          CostValue `json:"hourlyCost"`     // Total: base + LCU
+	BaseHourlyCost      CostValue `json:"baseHourlyCost"` // Fixed hourly charge
+	LCUHourlyCost       CostValue `json:"lcuHourlyCost"`  // LCU/NLCU-based hourly charge
+	ConsumedLCUs        float64   `json:"consumedLcus"`   // Average consumed LCUs per hour
 	UsageWindow         string    `json:"usageWindow,omitempty"`
 	UsageStart          string    `json:"usageStart,omitempty"`
 	UsageEnd            string    `json:"usageEnd,omitempty"`
@@ -156,6 +156,32 @@ type PublicIPv4 struct {
 	HourlyCost   CostValue `json:"hourlyCost"`
 }
 
+// LambdaFunction represents an AWS Lambda function with its observed usage cost
+type LambdaFunction struct {
+	AccountID         string    `json:"accountId"`
+	AccountName       string    `json:"accountName"`
+	Region            string    `json:"region"`
+	FunctionName      string    `json:"functionName"`
+	FunctionARN       string    `json:"functionArn"`
+	Runtime           string    `json:"runtime"`
+	Architectures     []string  `json:"architectures"`
+	MemorySize        int32     `json:"memorySize"`       // in MB
+	EphemeralStorage  int32     `json:"ephemeralStorage"` // in MB
+	PackageType       string    `json:"packageType"`
+	LastModified      string    `json:"lastModified"`
+	State             string    `json:"state"`
+	HourlyCost        CostValue `json:"hourlyCost"`
+	RequestHourlyCost CostValue `json:"requestHourlyCost"`
+	ComputeHourlyCost CostValue `json:"computeHourlyCost"`
+	Invocations       float64   `json:"invocations"`
+	AverageDurationMS float64   `json:"averageDurationMs"`
+	UsageWindow       string    `json:"usageWindow"`
+	UsageStart        string    `json:"usageStart"`
+	UsageEnd          string    `json:"usageEnd"`
+	UsageStatus       string    `json:"usageStatus,omitempty"`
+	UsageError        string    `json:"usageError,omitempty"`
+}
+
 // AccountSummary represents cost summary for an AWS account
 type AccountSummary struct {
 	AccountID       string    `json:"accountId"`
@@ -170,6 +196,7 @@ type AccountSummary struct {
 	EIPCount        int       `json:"eipCount"`
 	SecretCount     int       `json:"secretCount"`
 	PublicIPv4Count int       `json:"publicIpv4Count"`
+	LambdaCount     int       `json:"lambdaCount"`
 	TotalCost       CostValue `json:"totalCost"`
 }
 
@@ -186,6 +213,7 @@ type RegionSummary struct {
 	EIPCount        int       `json:"eipCount"`
 	SecretCount     int       `json:"secretCount"`
 	PublicIPv4Count int       `json:"publicIpv4Count"`
+	LambdaCount     int       `json:"lambdaCount"`
 	TotalCost       CostValue `json:"totalCost"`
 }
 
@@ -206,6 +234,7 @@ type CostResponse struct {
 	ElasticIPs    []ElasticIP      `json:"elasticIps,omitempty"`
 	Secrets       []Secret         `json:"secrets,omitempty"`
 	PublicIPv4s   []PublicIPv4     `json:"publicIpv4s,omitempty"`
+	Lambdas       []LambdaFunction `json:"lambdas,omitempty"`
 	Filters       AppliedFilters   `json:"filters"`
 }
 

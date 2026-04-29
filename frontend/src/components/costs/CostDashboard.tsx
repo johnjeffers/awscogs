@@ -17,7 +17,8 @@ type TabType =
   | 'nat'
   | 'eip'
   | 'secrets'
-  | 'publicipv4';
+  | 'publicipv4'
+  | 'lambda';
 
 const allTabs: { id: TabType; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
@@ -32,6 +33,7 @@ const allTabs: { id: TabType; label: string }[] = [
   { id: 'eip', label: 'EIP' },
   { id: 'secrets', label: 'Secrets' },
   { id: 'publicipv4', label: 'Public IPv4' },
+  { id: 'lambda', label: 'Lambda' },
 ];
 
 export const CostDashboard: React.FC = () => {
@@ -41,7 +43,7 @@ export const CostDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('accounts');
   const [filter, setFilter] = useState('');
   const [usageWindow, setUsageWindow] = useState<'1h' | '24h' | '30d'>('1h');
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Filter tabs based on selected resources (always show accounts and regions)
   const tabs = useMemo(() => {
@@ -154,6 +156,17 @@ export const CostDashboard: React.FC = () => {
       publicipv4: data.publicIpv4s?.filter((pip) =>
         matchesFilter([pip.publicIp, pip.instanceId, pip.instanceName, pip.region, pip.accountName]),
       ),
+      lambda: data.lambdas?.filter((fn) =>
+        matchesFilter([
+          fn.functionName,
+          fn.runtime,
+          fn.architectures.join(' '),
+          fn.packageType,
+          fn.state,
+          fn.region,
+          fn.accountName,
+        ]),
+      ),
     };
   }, [data, filter]);
 
@@ -184,6 +197,8 @@ export const CostDashboard: React.FC = () => {
         return { filtered: filteredData?.secrets?.length || 0, total: data.secrets?.length || 0 };
       case 'publicipv4':
         return { filtered: filteredData?.publicipv4?.length || 0, total: data.publicIpv4s?.length || 0 };
+      case 'lambda':
+        return { filtered: filteredData?.lambda?.length || 0, total: data.lambdas?.length || 0 };
     }
   };
 
@@ -207,7 +222,8 @@ export const CostDashboard: React.FC = () => {
       (data.natGateways?.length || 0) +
       (data.elasticIps?.length || 0) +
       (data.secrets?.length || 0) +
-      (data.publicIpv4s?.length || 0);
+      (data.publicIpv4s?.length || 0) +
+      (data.lambdas?.length || 0);
     return { cost, count };
   }, [data]);
 
@@ -232,7 +248,8 @@ export const CostDashboard: React.FC = () => {
         sumCost(filteredData.nat) +
         sumCost(filteredData.eip) +
         sumCost(filteredData.secrets) +
-        sumCost(filteredData.publicipv4);
+        sumCost(filteredData.publicipv4) +
+        sumCost(filteredData.lambda);
       const count =
         (filteredData.ec2?.length || 0) +
         (filteredData.ebs?.length || 0) +
@@ -243,7 +260,8 @@ export const CostDashboard: React.FC = () => {
         (filteredData.nat?.length || 0) +
         (filteredData.eip?.length || 0) +
         (filteredData.secrets?.length || 0) +
-        (filteredData.publicipv4?.length || 0);
+        (filteredData.publicipv4?.length || 0) +
+        (filteredData.lambda?.length || 0);
       return { cost, count };
     }
 
@@ -279,6 +297,9 @@ export const CostDashboard: React.FC = () => {
         break;
       case 'publicipv4':
         items = filteredData.publicipv4;
+        break;
+      case 'lambda':
+        items = filteredData.lambda;
         break;
     }
 
@@ -332,6 +353,7 @@ export const CostDashboard: React.FC = () => {
           { key: 'eipCount', label: 'EIP', id: 'eip' },
           { key: 'secretCount', label: 'Secrets', id: 'secrets' },
           { key: 'publicIpv4Count', label: 'IPv4', id: 'publicipv4' },
+          { key: 'lambdaCount', label: 'Lambda', id: 'lambda' },
         ].filter((c) => selectedResources.includes(c.id));
         headers = [
           'Account ID',
@@ -363,6 +385,7 @@ export const CostDashboard: React.FC = () => {
           { key: 'eipCount', label: 'EIP', id: 'eip' },
           { key: 'secretCount', label: 'Secrets', id: 'secrets' },
           { key: 'publicIpv4Count', label: 'IPv4', id: 'publicipv4' },
+          { key: 'lambdaCount', label: 'Lambda', id: 'lambda' },
         ].filter((c) => selectedResources.includes(c.id));
         headers = ['Region', ...countCols.map((c) => c.label), 'Hourly Cost', 'Daily Cost', 'Monthly Cost'];
         rows = (filteredData.regions || []).map((r) => [
@@ -624,6 +647,36 @@ export const CostDashboard: React.FC = () => {
           monthlyCost(pip.hourlyCost).toFixed(2),
         ]);
         break;
+      case 'lambda':
+        headers = [
+          'Account',
+          'Region',
+          'Function',
+          'Runtime',
+          'Architecture',
+          'Memory (MB)',
+          'Invocations',
+          'Avg Duration (ms)',
+          'State',
+          'Hourly Cost',
+          'Daily Cost',
+          'Monthly Cost',
+        ];
+        rows = (filteredData.lambda || []).map((fn) => [
+          fn.accountName || fn.accountId,
+          fn.region,
+          fn.functionName,
+          fn.runtime,
+          fn.architectures.join('/'),
+          String(fn.memorySize),
+          String(Math.round(fn.invocations)),
+          fn.averageDurationMs.toFixed(2),
+          fn.state,
+          fn.hourlyCost.toFixed(4),
+          dailyCost(fn.hourlyCost).toFixed(2),
+          monthlyCost(fn.hourlyCost).toFixed(2),
+        ]);
+        break;
     }
 
     const escapeCSV = (value: string) => {
@@ -795,6 +848,7 @@ export const CostDashboard: React.FC = () => {
               {activeTab === 'eip' && <CostTable eip={filteredData?.eip} />}
               {activeTab === 'secrets' && <CostTable secrets={filteredData?.secrets} />}
               {activeTab === 'publicipv4' && <CostTable publicipv4={filteredData?.publicipv4} />}
+              {activeTab === 'lambda' && <CostTable lambda={filteredData?.lambda} />}
             </div>
           </div>
         </>

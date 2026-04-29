@@ -39,6 +39,9 @@ type Provider interface {
 	// GetPublicIPv4Price returns the hourly price for a public IPv4 address
 	GetPublicIPv4Price(ctx context.Context, region string) (types.CostValue, error)
 
+	// GetLambdaPrice returns request and compute prices for Lambda.
+	GetLambdaPrice(ctx context.Context, region, architecture string) (request, gbSecond types.CostValue, err error)
+
 	// RefreshCache forces a refresh of the pricing cache
 	RefreshCache(ctx context.Context) error
 }

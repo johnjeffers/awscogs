@@ -23,6 +23,7 @@ These AWS resource types are supported:
 - ECS clusters
 - EKS clusters
 - Elastic IPs
+- Lambda functions
 - Public IPv4 addresses
 - Load Balancers
 - NAT Gateways

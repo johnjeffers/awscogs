@@ -65,6 +65,7 @@ func NewRouter(cfg *config.Config, discovery *aws.Discovery, logger *slog.Logger
 		r.Get("/costs/eip", costsHandler.GetElasticIPCosts)
 		r.Get("/costs/secrets", costsHandler.GetSecretsCosts)
 		r.Get("/costs/publicipv4", costsHandler.GetPublicIPv4Costs)
+		r.Get("/costs/lambda", costsHandler.GetLambdaCosts)
 	})
 
 	// Serve config.yaml from mounted ConfigMap if available, otherwise fall through to embedded SPA

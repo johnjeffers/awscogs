@@ -166,6 +166,18 @@ export const costApi = {
     const response = await fetchApi<CostResponse>(`/costs/publicipv4?${params.toString()}`);
     return response;
   },
+
+  async getLambdaCosts(filters: CostFilters = {}): Promise<CostResponse> {
+    const params = new URLSearchParams();
+    if (filters.accounts?.length) {
+      params.set('account', filters.accounts.join(','));
+    }
+    if (filters.regions?.length) {
+      params.set('region', filters.regions.join(','));
+    }
+    const response = await fetchApi<CostResponse>(`/costs/lambda?${params.toString()}`);
+    return response;
+  },
 };
 
 export const configApi = {

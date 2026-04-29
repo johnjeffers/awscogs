@@ -14,6 +14,7 @@ export interface CostResponse {
   elasticIps?: ElasticIP[];
   secrets?: Secret[];
   publicIpv4s?: PublicIPv4[];
+  lambdas?: LambdaFunction[];
   filters: AppliedFilters;
 }
 
@@ -30,6 +31,7 @@ export interface AccountSummary {
   eipCount: number;
   secretCount: number;
   publicIpv4Count: number;
+  lambdaCount: number;
   totalCost: number;
 }
 
@@ -45,6 +47,7 @@ export interface RegionSummary {
   eipCount: number;
   secretCount: number;
   publicIpv4Count: number;
+  lambdaCount: number;
   totalCost: number;
 }
 
@@ -183,6 +186,31 @@ export interface PublicIPv4 {
   hourlyCost: number;
 }
 
+export interface LambdaFunction {
+  accountId: string;
+  accountName: string;
+  region: string;
+  functionName: string;
+  functionArn: string;
+  runtime: string;
+  architectures: string[];
+  memorySize: number;
+  ephemeralStorage: number;
+  packageType: string;
+  lastModified: string;
+  state: string;
+  hourlyCost: number;
+  requestHourlyCost: number;
+  computeHourlyCost: number;
+  invocations: number;
+  averageDurationMs: number;
+  usageWindow: string;
+  usageStart: string;
+  usageEnd: string;
+  usageStatus?: string;
+  usageError?: string;
+}
+
 export interface AppliedFilters {
   accounts?: string[];
   regions?: string[];
@@ -206,6 +234,7 @@ export const RESOURCE_TYPES = [
   'eip',
   'secrets',
   'publicipv4',
+  'lambda',
 ] as const;
 
 export interface VersionInfo {
