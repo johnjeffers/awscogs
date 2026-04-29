@@ -45,14 +45,14 @@ New in v0.2.0, the Load Balancers view can now query CloudWatch Metrics to get r
 | `AWSCOGS_PRICING_RATE_LIMIT`         | Max pricing API calls per second                               | `5`                             |
 | `AWSCOGS_CACHE_RESOURCE_TTL_MINUTES` | Resource discovery cache TTL in minutes                        | `5`                             |
 | `AWSCOGS_CACHE_ACCOUNT_TTL_MINUTES`  | Account/region discovery cache TTL in minutes                  | `60`                            |
-| `AWSCOGS_ENABLE_GOVCLOUD`            | Enable AWS GovCloud support (`true`/`false`)                   | `false`                         |
+| `AWSCOGS_ENABLE_GOVCLOUD`            | Enable **EXPERIMENTAL** AWS GovCloud support (`true`/`false`)  | `false`                         |
 | `AWSCOGS_GOVCLOUD_DISCOVER_ACCOUNTS` | Auto-discover GovCloud accounts from Organizations             | `false`                         |
 | `AWSCOGS_GOVCLOUD_DISCOVER_REGIONS`  | Auto-discover enabled GovCloud regions                         | `true`                          |
 | `AWSCOGS_GOVCLOUD_REGIONS`           | Comma-separated GovCloud regions                               | -                               |
 | `AWSCOGS_GOVCLOUD_ACCOUNTS`          | GovCloud accounts (`name=roleArn` or `roleArn`)                | -                               |
 | `AWSCOGS_GOVCLOUD_ASSUME_ROLE_NAME`  | IAM role name for GovCloud account discovery                   | `OrganizationAccountAccessRole` |
 
-GovCloud settings are ignored unless `AWSCOGS_ENABLE_GOVCLOUD=true` is set. If no GovCloud accounts are configured and GovCloud account discovery is disabled, awsCOGS uses the current credentials in the GovCloud partition.
+**⚠️ GOVCLOUD SUPPORT IS EXPERIMENTAL AND UNTESTED.** GovCloud settings are ignored unless `AWSCOGS_ENABLE_GOVCLOUD=true` is set. If no GovCloud accounts are configured and GovCloud account discovery is disabled, awsCOGS uses the current credentials in the GovCloud partition.
 
 ## Running the Docker image locally
 
