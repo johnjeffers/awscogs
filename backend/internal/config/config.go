@@ -30,6 +30,17 @@ type AWSConfig struct {
 	AssumeRoleName   string          `yaml:"assumeRoleName"`   // Role name to assume into each account
 	Accounts         []AccountConfig `yaml:"accounts"`         // Manual account list (used if discoverAccounts is false)
 	Regions          []string        `yaml:"regions"`          // Manual region list (used if discoverRegions is false)
+	GovCloud         GovCloudConfig  `yaml:"govcloud"`         // GovCloud partition settings
+}
+
+// GovCloudConfig holds settings for the AWS GovCloud partition
+type GovCloudConfig struct {
+	Enabled          bool            `yaml:"enabled"`          // Effective GovCloud flag; requires AWSCOGS_ENABLE_GOVCLOUD
+	DiscoverAccounts bool            `yaml:"discoverAccounts"` // Auto-discover GovCloud accounts from Organizations
+	DiscoverRegions  bool            `yaml:"discoverRegions"`  // Auto-discover enabled GovCloud regions
+	Regions          []string        `yaml:"regions"`          // Explicit GovCloud region list
+	Accounts         []AccountConfig `yaml:"accounts"`         // GovCloud accounts (must have roleArn in aws-us-gov partition)
+	AssumeRoleName   string          `yaml:"assumeRoleName"`   // Role name for GovCloud Organizations assume role
 }
 
 // AccountConfig defines how to connect to a specific AWS account
@@ -65,6 +76,10 @@ func DefaultConfig() *Config {
 			DiscoverAccounts: true,
 			DiscoverRegions:  true,
 			AssumeRoleName:   "OrganizationAccountAccessRole",
+			GovCloud: GovCloudConfig{
+				DiscoverRegions: true,
+				AssumeRoleName:  "OrganizationAccountAccessRole",
+			},
 		},
 		Pricing: PricingConfig{
 			RefreshIntervalMinutes: 60,
@@ -123,12 +138,16 @@ func (c *Config) loadFromEnv() {
 		c.AWS.DiscoverRegions = false // Disable discovery if explicit regions set
 	}
 
-	if discoverRegions := os.Getenv("AWSCOGS_DISCOVER_REGIONS"); discoverRegions != "" {
-		c.AWS.DiscoverRegions = discoverRegions == "true" || discoverRegions == "1"
+	discoverRegionsSet := false
+	if discoverRegions, ok := boolEnv("AWSCOGS_DISCOVER_REGIONS"); ok {
+		c.AWS.DiscoverRegions = discoverRegions
+		discoverRegionsSet = true
 	}
 
-	if discoverAccounts := os.Getenv("AWSCOGS_DISCOVER_ACCOUNTS"); discoverAccounts != "" {
-		c.AWS.DiscoverAccounts = discoverAccounts == "true" || discoverAccounts == "1"
+	discoverAccountsSet := false
+	if discoverAccounts, ok := boolEnv("AWSCOGS_DISCOVER_ACCOUNTS"); ok {
+		c.AWS.DiscoverAccounts = discoverAccounts
+		discoverAccountsSet = true
 	}
 
 	if assumeRole := os.Getenv("AWSCOGS_ASSUME_ROLE_NAME"); assumeRole != "" {
@@ -158,6 +177,45 @@ func (c *Config) loadFromEnv() {
 			c.Cache.AccountTTLMinutes = t
 		}
 	}
+
+	// GovCloud environment variables
+	if govEnabled, ok := boolEnv("AWSCOGS_ENABLE_GOVCLOUD"); ok {
+		c.AWS.GovCloud.Enabled = govEnabled
+	} else {
+		// GovCloud config is inert unless explicitly enabled by environment.
+		c.AWS.GovCloud.Enabled = false
+	}
+
+	if govRegions := os.Getenv("AWSCOGS_GOVCLOUD_REGIONS"); govRegions != "" {
+		c.AWS.GovCloud.Regions = splitCSV(govRegions)
+		c.AWS.GovCloud.DiscoverRegions = false
+	}
+
+	if govAccounts := os.Getenv("AWSCOGS_GOVCLOUD_ACCOUNTS"); govAccounts != "" {
+		c.AWS.GovCloud.Accounts = parseAccountList(govAccounts)
+		c.AWS.GovCloud.DiscoverAccounts = false
+	}
+
+	if govDiscoverAccounts, ok := boolEnv("AWSCOGS_GOVCLOUD_DISCOVER_ACCOUNTS"); ok {
+		c.AWS.GovCloud.DiscoverAccounts = govDiscoverAccounts
+	}
+
+	if govDiscoverRegions, ok := boolEnv("AWSCOGS_GOVCLOUD_DISCOVER_REGIONS"); ok {
+		c.AWS.GovCloud.DiscoverRegions = govDiscoverRegions
+	}
+
+	if govAssumeRole := os.Getenv("AWSCOGS_GOVCLOUD_ASSUME_ROLE_NAME"); govAssumeRole != "" {
+		c.AWS.GovCloud.AssumeRoleName = govAssumeRole
+	}
+
+	if c.AWS.GovCloud.Enabled && len(c.AWS.Accounts) == 0 && len(c.AWS.Regions) == 0 {
+		if !discoverAccountsSet {
+			c.AWS.DiscoverAccounts = false
+		}
+		if !discoverRegionsSet {
+			c.AWS.DiscoverRegions = false
+		}
+	}
 }
 
 // Validate checks the configuration for errors
@@ -176,4 +234,60 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func boolEnv(name string) (bool, bool) {
+	value, ok := os.LookupEnv(name)
+	if !ok {
+		return false, false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		return true, true
+	default:
+		return false, true
+	}
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func parseAccountList(value string) []AccountConfig {
+	entries := splitCSV(value)
+	accounts := make([]AccountConfig, 0, len(entries))
+	for _, entry := range entries {
+		if name, roleARN, ok := strings.Cut(entry, "="); ok {
+			accounts = append(accounts, AccountConfig{
+				Name:    strings.TrimSpace(name),
+				RoleARN: strings.TrimSpace(roleARN),
+			})
+			continue
+		}
+
+		account := AccountConfig{Name: entry}
+		if strings.HasPrefix(entry, "arn:") {
+			account.Name = accountNameFromRoleARN(entry)
+			account.RoleARN = entry
+		}
+		accounts = append(accounts, account)
+	}
+	return accounts
+}
+
+func accountNameFromRoleARN(roleARN string) string {
+	parts := strings.Split(roleARN, ":")
+	if len(parts) > 4 && parts[4] != "" {
+		return parts[4]
+	}
+	return roleARN
 }
