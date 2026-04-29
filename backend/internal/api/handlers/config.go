@@ -67,20 +67,27 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Append GovCloud regions
 	if h.config.AWS.GovCloud.Enabled {
-		if h.config.AWS.GovCloud.DiscoverRegions && len(h.config.AWS.GovCloud.Accounts) > 0 {
-			firstAccount := aws.Account{
-				Name:      h.config.AWS.GovCloud.Accounts[0].Name,
-				RoleARN:   h.config.AWS.GovCloud.Accounts[0].RoleARN,
-				Partition: "aws-us-gov",
+		if h.config.AWS.GovCloud.DiscoverRegions {
+			account := aws.Account{Partition: "aws-us-gov"}
+			if len(h.config.AWS.GovCloud.Accounts) > 0 {
+				account.Name = h.config.AWS.GovCloud.Accounts[0].Name
+				account.RoleARN = h.config.AWS.GovCloud.Accounts[0].RoleARN
 			}
-			govRegions, err := h.discovery.DiscoverGovCloudRegions(ctx, firstAccount)
+			govRegions, err := h.discovery.DiscoverGovCloudRegions(ctx, account)
 			if err != nil {
 				h.logger.Error("failed to discover govcloud regions", "error", err)
+				if len(h.config.AWS.GovCloud.Regions) > 0 {
+					regions = append(regions, h.config.AWS.GovCloud.Regions...)
+				} else {
+					regions = append(regions, "us-gov-west-1")
+				}
 			} else {
 				regions = append(regions, govRegions...)
 			}
 		} else if len(h.config.AWS.GovCloud.Regions) > 0 {
 			regions = append(regions, h.config.AWS.GovCloud.Regions...)
+		} else {
+			regions = append(regions, "us-gov-west-1")
 		}
 	}
 
@@ -112,8 +119,23 @@ func (h *ConfigHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Append GovCloud accounts
 	if h.config.AWS.GovCloud.Enabled {
-		for _, acc := range h.config.AWS.GovCloud.Accounts {
-			accounts = append(accounts, AccountInfo{Name: acc.Name})
+		if h.config.AWS.GovCloud.DiscoverAccounts {
+			discoveredAccounts, err := h.discovery.DiscoverGovCloudAccounts(ctx, h.config.AWS.GovCloud.AssumeRoleName)
+			if err != nil {
+				h.logger.Error("failed to discover govcloud accounts", "error", err)
+				http.Error(w, "internal server error", http.StatusInternalServerError)
+				return
+			}
+			for _, acc := range discoveredAccounts {
+				accounts = append(accounts, AccountInfo{
+					ID:   acc.ID,
+					Name: acc.Name,
+				})
+			}
+		} else {
+			for _, acc := range h.config.AWS.GovCloud.Accounts {
+				accounts = append(accounts, AccountInfo{Name: acc.Name})
+			}
 		}
 	}
 

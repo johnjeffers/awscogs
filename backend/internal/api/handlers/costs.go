@@ -727,7 +727,10 @@ func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]strin
 	if h.config.AWS.GovCloud.Enabled {
 		govRegions, err := h.getGovCloudRegions(ctx)
 		if err != nil {
-			// Log but don't fail - commercial regions can still work
+			if len(regions) == 0 {
+				return nil, err
+			}
+			// Log but don't fail if commercial regions can still work.
 			h.logger.Error("failed to get govcloud regions", "error", err)
 		} else {
 			regions = append(regions, govRegions...)
@@ -735,6 +738,9 @@ func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]strin
 	}
 
 	if len(regions) == 0 {
+		if h.config.AWS.GovCloud.Enabled {
+			return []string{"us-gov-west-1"}, nil
+		}
 		return []string{"us-east-1"}, nil
 	}
 
@@ -743,21 +749,25 @@ func (h *CostsHandler) getRegions(ctx context.Context, filter []string) ([]strin
 
 // getGovCloudRegions returns GovCloud regions from config or discovery
 func (h *CostsHandler) getGovCloudRegions(ctx context.Context) ([]string, error) {
-	if h.config.AWS.GovCloud.DiscoverRegions && len(h.config.AWS.GovCloud.Accounts) > 0 {
-		// Use first GovCloud account's credentials to discover regions
-		firstAccount := aws.Account{
-			Name:      h.config.AWS.GovCloud.Accounts[0].Name,
-			RoleARN:   h.config.AWS.GovCloud.Accounts[0].RoleARN,
-			Partition: "aws-us-gov",
+	if h.config.AWS.GovCloud.DiscoverRegions {
+		account := aws.Account{Partition: "aws-us-gov"}
+		if len(h.config.AWS.GovCloud.Accounts) > 0 {
+			// Use first configured GovCloud account's credentials to discover regions.
+			account.Name = h.config.AWS.GovCloud.Accounts[0].Name
+			account.RoleARN = h.config.AWS.GovCloud.Accounts[0].RoleARN
 		}
-		return h.discovery.DiscoverGovCloudRegions(ctx, firstAccount)
+		regions, err := h.discovery.DiscoverGovCloudRegions(ctx, account)
+		if err == nil || len(h.config.AWS.GovCloud.Regions) == 0 {
+			return regions, err
+		}
+		h.logger.Warn("falling back to configured govcloud regions after discovery failed", "error", err)
 	}
 
 	if len(h.config.AWS.GovCloud.Regions) > 0 {
 		return h.config.AWS.GovCloud.Regions, nil
 	}
 
-	return nil, nil
+	return []string{"us-gov-west-1"}, nil
 }
 
 // getAccounts returns accounts to query - either from filter, discovery, or config
@@ -782,10 +792,22 @@ func (h *CostsHandler) getAccounts(ctx context.Context, filter []string) ([]aws.
 
 	// GovCloud accounts
 	if h.config.AWS.GovCloud.Enabled {
-		for _, acc := range h.config.AWS.GovCloud.Accounts {
+		if h.config.AWS.GovCloud.DiscoverAccounts {
+			discovered, err := h.discovery.DiscoverGovCloudAccounts(ctx, h.config.AWS.GovCloud.AssumeRoleName)
+			if err != nil {
+				return nil, err
+			}
+			accounts = append(accounts, discovered...)
+		} else if len(h.config.AWS.GovCloud.Accounts) > 0 {
+			for _, acc := range h.config.AWS.GovCloud.Accounts {
+				accounts = append(accounts, aws.Account{
+					Name:      acc.Name,
+					RoleARN:   acc.RoleARN,
+					Partition: "aws-us-gov",
+				})
+			}
+		} else {
 			accounts = append(accounts, aws.Account{
-				Name:      acc.Name,
-				RoleARN:   acc.RoleARN,
 				Partition: "aws-us-gov",
 			})
 		}

@@ -53,6 +53,10 @@ type Discovery struct {
 	accountCache   *cacheEntry[[]Account]
 	accountCacheMu sync.RWMutex
 
+	// GovCloud account discovery cache
+	govCloudAccountCache   *cacheEntry[[]Account]
+	govCloudAccountCacheMu sync.RWMutex
+
 	// Region discovery cache
 	regionCache   *cacheEntry[[]string]
 	regionCacheMu sync.RWMutex
@@ -165,6 +169,23 @@ func resourceCacheKey(accountID, region, resourceType string) string {
 	return accountID + "|" + region + "|" + resourceType
 }
 
+func defaultAccountsForRegions(regions []string) []Account {
+	seen := make(map[string]bool)
+	accounts := make([]Account, 0, 2)
+	for _, region := range regions {
+		partition := PartitionForRegion(region)
+		if seen[partition] {
+			continue
+		}
+		seen[partition] = true
+		accounts = append(accounts, Account{Partition: partition})
+	}
+	if len(accounts) == 0 {
+		return []Account{{Partition: "aws"}}
+	}
+	return accounts
+}
+
 // shouldDiscover checks if a resource type should be discovered based on the filter
 func shouldDiscover(resourceTypes []string, resourceType string) bool {
 	if len(resourceTypes) == 0 {
@@ -199,7 +220,7 @@ func (d *Discovery) DiscoverResources(ctx context.Context, accounts []Account, r
 
 	// If no accounts specified, use default credentials
 	if len(accounts) == 0 {
-		accounts = []Account{{}}
+		accounts = defaultAccountsForRegions(regions)
 	}
 
 	for _, account := range accounts {
@@ -518,50 +539,9 @@ func (d *Discovery) DiscoverAccounts(ctx context.Context, assumeRoleName string)
 	}
 	d.accountCacheMu.RUnlock()
 
-	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion("us-east-1"))
+	accounts, err := d.discoverAccountsInPartition(ctx, "aws", assumeRoleName)
 	if err != nil {
-		return nil, fmt.Errorf("loading default config: %w", err)
-	}
-
-	// Get current account ID to identify the management account
-	stsClient := sts.NewFromConfig(cfg)
-	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-	if err != nil {
-		return nil, fmt.Errorf("getting caller identity: %w", err)
-	}
-	currentAccountID := *identity.Account
-
-	// Try to list accounts from Organizations
-	orgClient := organizations.NewFromConfig(cfg)
-	var accounts []Account
-
-	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			// If we don't have Organizations access, fall back to current account only
-			d.logger.Info("organizations access not available, using current account only", "error", err)
-			return []Account{{ID: currentAccountID}}, nil
-		}
-
-		for _, acc := range page.Accounts {
-			if acc.Status != "ACTIVE" {
-				continue
-			}
-
-			account := Account{
-				ID:        *acc.Id,
-				Name:      *acc.Name,
-				Partition: "aws",
-			}
-
-			// For non-management accounts, construct the role ARN to assume
-			if *acc.Id != currentAccountID && assumeRoleName != "" {
-				account.RoleARN = fmt.Sprintf("%s:iam::%s:role/%s", arnPrefix("aws"), *acc.Id, assumeRoleName)
-			}
-
-			accounts = append(accounts, account)
-		}
+		return nil, err
 	}
 
 	// Cache the result
@@ -573,6 +553,87 @@ func (d *Discovery) DiscoverAccounts(ctx context.Context, assumeRoleName string)
 	d.accountCacheMu.Unlock()
 
 	d.logger.Info("discovered accounts from organizations", "count", len(accounts))
+	return accounts, nil
+}
+
+// DiscoverGovCloudAccounts returns all GovCloud accounts from Organizations with the specified assume role.
+func (d *Discovery) DiscoverGovCloudAccounts(ctx context.Context, assumeRoleName string) ([]Account, error) {
+	// Check cache first
+	d.govCloudAccountCacheMu.RLock()
+	if d.govCloudAccountCache != nil && time.Now().Before(d.govCloudAccountCache.expiresAt) {
+		accounts := d.govCloudAccountCache.value
+		d.govCloudAccountCacheMu.RUnlock()
+		d.logger.Debug("returning cached govcloud accounts", "count", len(accounts))
+		return accounts, nil
+	}
+	d.govCloudAccountCacheMu.RUnlock()
+
+	accounts, err := d.discoverAccountsInPartition(ctx, "aws-us-gov", assumeRoleName)
+	if err != nil {
+		return nil, err
+	}
+
+	// Cache the result
+	d.govCloudAccountCacheMu.Lock()
+	d.govCloudAccountCache = &cacheEntry[[]Account]{
+		value:     accounts,
+		expiresAt: time.Now().Add(d.accountTTL),
+	}
+	d.govCloudAccountCacheMu.Unlock()
+
+	d.logger.Info("discovered govcloud accounts from organizations", "count", len(accounts))
+	return accounts, nil
+}
+
+func (d *Discovery) discoverAccountsInPartition(ctx context.Context, partition, assumeRoleName string) ([]Account, error) {
+	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(DefaultRegionForPartition(partition)))
+	if err != nil {
+		return nil, fmt.Errorf("loading default config: %w", err)
+	}
+
+	// Get current account ID to identify the management account.
+	stsClient := sts.NewFromConfig(cfg)
+	identity, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, fmt.Errorf("getting caller identity: %w", err)
+	}
+	currentAccountID := *identity.Account
+
+	// Try to list accounts from Organizations.
+	orgClient := organizations.NewFromConfig(cfg)
+	var accounts []Account
+
+	paginator := organizations.NewListAccountsPaginator(orgClient, &organizations.ListAccountsInput{})
+	for paginator.HasMorePages() {
+		page, err := paginator.NextPage(ctx)
+		if err != nil {
+			// If we don't have Organizations access, fall back to current account only.
+			d.logger.Info("organizations access not available, using current account only",
+				"partition", partition,
+				"error", err)
+			return []Account{{ID: currentAccountID, Partition: partition}}, nil
+		}
+
+		for _, acc := range page.Accounts {
+			if acc.Status != "ACTIVE" {
+				continue
+			}
+
+			account := Account{
+				ID:        *acc.Id,
+				Name:      *acc.Name,
+				Partition: partition,
+			}
+
+			// For non-management accounts, construct the role ARN to assume.
+			if *acc.Id != currentAccountID && assumeRoleName != "" {
+				account.RoleARN = fmt.Sprintf("%s:iam::%s:role/%s", arnPrefix(partition), *acc.Id, assumeRoleName)
+			}
+
+			accounts = append(accounts, account)
+		}
+	}
+
 	return accounts, nil
 }
 
