@@ -1,4 +1,4 @@
-import yaml from 'js-yaml';
+import { load as yamlLoad } from 'js-yaml';
 
 interface AppConfig {
   exclude?: {
@@ -22,7 +22,7 @@ export async function loadAppConfig(): Promise<AppConfig> {
       return {};
     }
     const text = await response.text();
-    cachedConfig = yaml.load(text) as AppConfig;
+    cachedConfig = yamlLoad(text) as AppConfig;
     return cachedConfig || {};
   } catch (error) {
     console.warn('Error loading config.yaml:', error);
