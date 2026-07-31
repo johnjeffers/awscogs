@@ -1,16 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { useAppSelector, useAppDispatch } from '../../hooks/useAppDispatch';
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useAppDispatch, useAppSelector } from '../../hooks/useAppDispatch';
+import { loadAppConfig, shouldExcludeAccount, shouldExcludeRegion } from '../../services/configService';
 import {
+  cancelCostLoad,
+  clearCache,
+  fetchCosts,
   setSelectedAccounts,
   setSelectedRegions,
   setSelectedResources,
-  fetchCosts,
-  cancelCostLoad,
-  clearCache,
 } from '../../store/costSlice';
-import { MultiSelectDropdown } from '../common/MultiSelectDropdown';
 import { RESOURCE_TYPES } from '../../types/cost';
-import { loadAppConfig, shouldExcludeAccount, shouldExcludeRegion } from '../../services/configService';
+import { MultiSelectDropdown } from '../common/MultiSelectDropdown';
 
 type LoadPromise = Promise<unknown> & { abort: () => void };
 
@@ -124,7 +125,7 @@ export const ResourceSelector: React.FC = () => {
       <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
         <div className="flex">
           <div className="flex-shrink-0">
-            <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+            <svg aria-hidden="true" className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
               <path
                 fillRule="evenodd"
                 d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
@@ -220,10 +221,11 @@ export const ResourceSelector: React.FC = () => {
           {loading ? (
             <div className="relative w-full">
               <button
+                type="button"
                 onClick={handleCancelLoad}
                 className="w-full px-3 py-2.5 text-sm font-medium bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 flex items-center justify-center gap-2"
               >
-                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
+                <svg aria-hidden="true" className="h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                   <path d="M6 6h8v8H6z" />
                 </svg>
                 Stop
@@ -232,6 +234,7 @@ export const ResourceSelector: React.FC = () => {
           ) : (
             <div className="relative w-full">
               <button
+                type="button"
                 onClick={handleLoadData}
                 onContextMenu={(event) => {
                   event.preventDefault();
@@ -244,7 +247,7 @@ export const ResourceSelector: React.FC = () => {
               >
                 {clearingCache ? (
                   <>
-                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                    <svg aria-hidden="true" className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path
                         className="opacity-75"
@@ -256,7 +259,7 @@ export const ResourceSelector: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"

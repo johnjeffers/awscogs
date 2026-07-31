@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
-import { useAppSelector, useAppDispatch } from '../../hooks/useAppDispatch';
-import { fetchCosts, fetchConfig, fetchELBUsage, clearELBUsage } from '../../store/costSlice';
+import type React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useAppDispatch, useAppSelector } from '../../hooks/useAppDispatch';
+import { clearELBUsage, fetchConfig, fetchCosts, fetchELBUsage } from '../../store/costSlice';
 import { CostSummary } from './CostSummary';
 import { CostTable } from './CostTable';
 import { ResourceSelector } from './ResourceSelector';
@@ -44,6 +45,7 @@ export const CostDashboard: React.FC = () => {
   const [filter, setFilter] = useState('');
   const [usageWindow, setUsageWindow] = useState<'1h' | '24h' | '30d'>('1h');
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadBalancerCount = data?.loadBalancers?.length ?? 0;
 
   // Filter tabs based on selected resources (always show accounts and regions)
   const tabs = useMemo(() => {
@@ -91,13 +93,13 @@ export const CostDashboard: React.FC = () => {
 
   // Fetch ELB usage when ELB tab is active or cost data refreshes
   useEffect(() => {
-    if (activeTab === 'elb' && hasLoadedData && data?.loadBalancers?.length) {
+    if (activeTab === 'elb' && hasLoadedData && dataVersion > 0 && loadBalancerCount > 0) {
       const promise = dispatch(fetchELBUsage(usageWindow));
       const timer = setTimeout(() => dispatch(clearELBUsage()), 200);
       promise.then(() => clearTimeout(timer));
       return () => clearTimeout(timer);
     }
-  }, [dispatch, activeTab, usageWindow, hasLoadedData, dataVersion]);
+  }, [dispatch, activeTab, usageWindow, hasLoadedData, dataVersion, loadBalancerCount]);
 
   // Filter data based on active tab and filter text
   const filteredData = useMemo(() => {
@@ -729,7 +731,7 @@ export const CostDashboard: React.FC = () => {
         <div className="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
           <div className="flex">
             <div className="flex-shrink-0">
-              <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
+              <svg aria-hidden="true" className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
                 <path
                   fillRule="evenodd"
                   d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
@@ -778,7 +780,7 @@ export const CostDashboard: React.FC = () => {
               <details className={`mt-3 text-sm ${diagnosticsTone.body}`}>
                 <summary className="cursor-pointer font-medium">Diagnostics</summary>
                 <ul className="mt-2 space-y-2">
-                  {diagnostics.slice(0, 25).map((diagnostic, index) => {
+                  {diagnostics.slice(0, 25).map((diagnostic) => {
                     const scope = [
                       diagnostic.resourceType,
                       diagnostic.accountName || diagnostic.accountId,
@@ -787,8 +789,18 @@ export const CostDashboard: React.FC = () => {
                     ]
                       .filter(Boolean)
                       .join(' / ');
+                    const diagnosticKey = [
+                      diagnostic.level,
+                      diagnostic.operation,
+                      diagnostic.resourceType,
+                      diagnostic.accountId,
+                      diagnostic.accountName,
+                      diagnostic.region,
+                      diagnostic.resourceId,
+                      diagnostic.message,
+                    ].join('|');
                     return (
-                      <li key={`${diagnostic.operation || 'diagnostic'}-${index}`}>
+                      <li key={diagnosticKey}>
                         <span className="font-medium">{diagnostic.operation || diagnostic.level}</span>
                         {scope && <span> ({scope})</span>}: {diagnostic.message}
                       </li>
@@ -817,6 +829,7 @@ export const CostDashboard: React.FC = () => {
                 <nav className="flex overflow-x-auto flex-1 min-w-0">
                   {tabs.map((tab) => (
                     <button
+                      type="button"
                       key={tab.id}
                       onClick={() => setActiveTab(tab.id)}
                       className={`py-4 px-6 text-sm font-medium whitespace-nowrap flex-shrink-0 ${
@@ -841,7 +854,13 @@ export const CostDashboard: React.FC = () => {
                 <div className="py-3 flex items-center gap-3 flex-shrink-0 ml-4">
                   <div className="relative">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg
+                        aria-hidden="true"
+                        className="h-4 w-4 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
                         <path
                           strokeLinecap="round"
                           strokeLinejoin="round"
@@ -859,10 +878,12 @@ export const CostDashboard: React.FC = () => {
                     />
                     {filter && (
                       <button
+                        type="button"
                         onClick={() => setFilter('')}
                         className="absolute inset-y-0 right-0 pr-3 flex items-center"
                       >
                         <svg
+                          aria-hidden="true"
                           className="h-4 w-4 text-gray-400 hover:text-gray-600"
                           fill="none"
                           viewBox="0 0 24 24"
@@ -874,10 +895,11 @@ export const CostDashboard: React.FC = () => {
                     )}
                   </div>
                   <button
+                    type="button"
                     onClick={exportToCSV}
                     className="px-3 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center gap-1"
                   >
-                    <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path
                         strokeLinecap="round"
                         strokeLinejoin="round"

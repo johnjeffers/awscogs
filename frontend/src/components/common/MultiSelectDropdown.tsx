@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Option {
   value: string;
@@ -79,6 +80,7 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
         </span>
         <span className="absolute inset-y-0 right-0 flex items-center pr-2 pointer-events-none">
           <svg
+            aria-hidden="true"
             className={`h-5 w-5 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
             fill="none"
             viewBox="0 0 24 24"
@@ -92,38 +94,34 @@ export const MultiSelectDropdown: React.FC<MultiSelectDropdownProps> = ({
       {isOpen && (
         <div className="absolute z-10 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-sm ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none">
           {/* Select All option */}
-          <div
-            className="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100 border-b border-gray-200"
-            onClick={handleSelectAll}
-          >
+          <label className="block cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100 border-b border-gray-200">
             <div className="flex items-center">
               <input
                 type="checkbox"
                 checked={selected.length === options.length}
-                onChange={() => {}}
+                onChange={handleSelectAll}
                 className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
               />
               <span className="ml-3 font-medium text-gray-900">Select All</span>
             </div>
-          </div>
+          </label>
 
           {/* Options */}
           {options.map((option) => (
-            <div
+            <label
               key={option.value}
-              className="cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100"
-              onClick={() => handleToggle(option.value)}
+              className="block cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gray-100"
             >
               <div className="flex items-center">
                 <input
                   type="checkbox"
                   checked={selected.includes(option.value)}
-                  onChange={() => {}}
+                  onChange={() => handleToggle(option.value)}
                   className="h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                 />
                 <span className="ml-3 block truncate text-gray-900">{option.label}</span>
               </div>
-            </div>
+            </label>
           ))}
 
           {options.length === 0 && <div className="py-2 pl-3 pr-9 text-gray-500">No options available</div>}

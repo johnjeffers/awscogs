@@ -1,18 +1,19 @@
-import React, { useState, useMemo } from 'react';
+import type React from 'react';
+import { useMemo, useState } from 'react';
 import type {
   AccountSummary,
-  RegionSummary,
-  EC2Instance,
   EBSVolume,
+  EC2Instance,
   ECSService,
-  RDSInstance,
   EKSCluster,
+  ElasticIP,
+  LambdaFunction,
   LoadBalancer,
   NATGateway,
-  ElasticIP,
-  Secret,
   PublicIPv4,
-  LambdaFunction,
+  RDSInstance,
+  RegionSummary,
+  Secret,
 } from '../../types/cost';
 
 interface CostTableProps {
@@ -107,6 +108,7 @@ const Pagination: React.FC<PaginationProps> = ({
       {!isAllSelected && totalPages > 1 && (
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={() => onPageChange(1)}
             disabled={currentPage === 1}
             className="px-2 py-1 text-base text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
@@ -114,6 +116,7 @@ const Pagination: React.FC<PaginationProps> = ({
             «
           </button>
           <button
+            type="button"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage === 1}
             className="px-2 py-1 text-base text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
@@ -124,6 +127,7 @@ const Pagination: React.FC<PaginationProps> = ({
             Page {currentPage} of {totalPages}
           </span>
           <button
+            type="button"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage === totalPages}
             className="px-2 py-1 text-base text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
@@ -131,6 +135,7 @@ const Pagination: React.FC<PaginationProps> = ({
             ›
           </button>
           <button
+            type="button"
             onClick={() => onPageChange(totalPages)}
             disabled={currentPage === totalPages}
             className="px-2 py-1 text-base text-gray-600 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed"
@@ -357,7 +362,7 @@ export const CostTable: React.FC<CostTableProps> = ({
     if (bytes === undefined || bytes === 0) return '0 B';
     const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
     const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
-    const value = bytes / Math.pow(1024, i);
+    const value = bytes / 1024 ** i;
     return `${value.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
   };
 
@@ -1225,6 +1230,7 @@ export const CostTable: React.FC<CostTableProps> = ({
                       <span className="inline-flex rounded overflow-hidden border border-gray-300">
                         {(['1h', '24h', '30d'] as const).map((w) => (
                           <button
+                            type="button"
                             key={w}
                             onClick={(e) => {
                               e.stopPropagation();

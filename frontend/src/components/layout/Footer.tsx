@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { useAppSelector } from '../../hooks/useAppDispatch';
 
 export const Footer: React.FC<{ expanded?: boolean }> = ({ expanded }) => {

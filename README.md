@@ -94,9 +94,14 @@ helm upgrade --install awscogs oci://ghcr.io/johnjeffers/charts/awscogs \
 
 ### Prerequisites
 
-- Go 1.26
-- Node 25
+- [mise](https://mise.jdx.dev/)
 - Valid AWS credentials
+
+Install the repository toolchain (Go 1.26 and the latest Node.js release):
+
+```sh
+mise install
+```
 
 ### Run in dev mode
 
@@ -150,7 +155,7 @@ Open http://localhost:8080
 make lint
 ```
 
-This formats and lints both the backend (go fmt, go vet, staticcheck) and frontend (prettier, eslint, tsc).
+This formats and lints both the backend (go fmt, go vet, staticcheck) and frontend (Biome, tsc).
 
 ## Releasing
 

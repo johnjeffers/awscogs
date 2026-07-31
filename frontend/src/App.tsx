@@ -1,7 +1,7 @@
 import { Provider } from 'react-redux';
-import { store } from './store';
-import { Layout } from './components/layout/Layout';
 import { CostDashboard } from './components/costs/CostDashboard';
+import { Layout } from './components/layout/Layout';
+import { store } from './store';
 
 function App() {
   return (

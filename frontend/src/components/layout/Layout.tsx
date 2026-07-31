@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { Footer } from './Footer';
 
 interface LayoutProps {
@@ -15,6 +16,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
         <div className={`${containerClass} py-4 flex items-center justify-between`}>
           <h1 className="text-2xl font-bold text-gray-900">awsCOGS</h1>
           <button
+            type="button"
             onClick={() => setExpanded(!expanded)}
             className="px-2 py-1 text-lg font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded font-mono tracking-widest"
             title={expanded ? 'Collapse' : 'Expand'}

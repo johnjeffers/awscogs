@@ -1,7 +1,7 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
-import type { CostResponse, CostFilters, ConfigResponse } from '../types/cost';
-import { costApi, configApi } from '../services/api';
+import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import { configApi, costApi } from '../services/api';
+import type { ConfigResponse, CostFilters, CostResponse } from '../types/cost';
 
 interface CostState {
   data: CostResponse | null;
