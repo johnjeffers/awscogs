@@ -15,6 +15,7 @@ import type {
   RegionSummary,
   Secret,
 } from '../../types/cost';
+import { type SortConfig, sortData } from '../../utils/sortData';
 
 interface CostTableProps {
   accounts?: AccountSummary[];
@@ -49,12 +50,7 @@ const SUMMARY_RESOURCE_COLUMNS: { id: string; label: string; countKey: string }[
   { id: 'lambda', label: 'Lambda', countKey: 'lambdaCount' },
 ];
 
-type SortDirection = 'asc' | 'desc';
-
-interface SortConfig {
-  key: string;
-  direction: SortDirection;
-}
+type SortDirection = SortConfig['direction'];
 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 'All'] as const;
 type PageSize = (typeof PAGE_SIZE_OPTIONS)[number];
@@ -233,48 +229,6 @@ const SortableSubHeader: React.FC<{
     </th>
   );
 };
-
-const NUMERIC_SORT_KEYS = new Set([
-  'hourlyCost',
-  'totalCost',
-  'size',
-  'desiredCount',
-  'runningCount',
-  'memorySize',
-  'invocations',
-  'averageDurationMs',
-  'requestVolume',
-  'bandwidthBytes',
-]);
-
-function sortData<T>(data: T[], sortConfig: SortConfig): T[] {
-  const isNumeric = NUMERIC_SORT_KEYS.has(sortConfig.key);
-  return [...data].sort((a, b) => {
-    let aVal = (a as Record<string, unknown>)[sortConfig.key];
-    let bVal = (b as Record<string, unknown>)[sortConfig.key];
-
-    // Treat missing numeric values as 0
-    if (isNumeric) {
-      if (aVal == null) aVal = 0;
-      if (bVal == null) bVal = 0;
-    } else {
-      if (aVal == null && bVal == null) return 0;
-      if (aVal == null) return 1;
-      if (bVal == null) return -1;
-    }
-    if (Array.isArray(aVal)) aVal = aVal.join(' ');
-    if (Array.isArray(bVal)) bVal = bVal.join(' ');
-
-    let comparison = 0;
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      comparison = aVal.localeCompare(bVal);
-    } else if (typeof aVal === 'number' && typeof bVal === 'number') {
-      comparison = aVal - bVal;
-    }
-
-    return sortConfig.direction === 'asc' ? comparison : -comparison;
-  });
-}
 
 export const CostTable: React.FC<CostTableProps> = ({
   accounts,
